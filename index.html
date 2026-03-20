@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRACTIA — Security Audit</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060810;
+    --surface: #0b0f1a;
+    --panel: #0f1420;
+    --border: #1a2035;
+    --accent: #00f5a0;
+    --accent2: #00b4d8;
+    --warn: #ff9f1c;
+    --danger: #ff2d55;
+    --muted: #3a4560;
+    --text: #c8d6f0;
+    --text-dim: #5a6880;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,245,160,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glowing orb */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(0,245,160,0.06) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse-icon 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse-icon {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.4) drop-shadow(0 0 8px var(--accent)); }
+  }
+
+  .logo-text {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .logo-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── TITLE SECTION ── */
+  .title-section {
+    margin-bottom: 36px;
+  }
+
+  .title-section h1 {
+    font-size: clamp(28px, 5vw, 42px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+
+  .title-section h1 span {
+    color: var(--accent);
+  }
+
+  .title-section p {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── APP INPUT ── */
+  .app-config {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .app-config::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), transparent);
+  }
+
+  .config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 640px) {
+    .config-grid { grid-template-columns: 1fr; }
+  }
+
+  .field-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .field-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0,245,160,0.08);
+  }
+
+  .field-input::placeholder { color: var(--muted); }
+
+  .field-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a6880'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
+  .modules-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .modules-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .module-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .module-chip.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,245,160,0.06);
+    box-shadow: 0 0 10px rgba(0,245,160,0.1);
+  }
+
+  .module-chip:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  .chip-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .run-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .run-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    transform: translateX(-100%);
+    transition: transform 0.4s;
+  }
+
+  .run-btn:hover::before { transform: translateX(100%); }
+  .run-btn:hover { box-shadow: 0 0 20px rgba(0,245,160,0.4); transform: translateY(-1px); }
+  .run-btn:active { transform: translateY(0); }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── OUTPUT PANEL ── */
+  .output-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .output-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  .scanning-badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    background: rgba(0,245,160,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(0,245,160,0.2);
+    animation: badge-pulse 1.5s ease-in-out infinite;
+    display: none;
+  }
+
+  .scanning-badge.visible { display: block; }
+
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .output-body {
+    padding: 20px;
+    min-height: 300px;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+
+  /* Scrollbar */
+  .output-body::-webkit-scrollbar { width: 4px; }
+  .output-body::-webkit-scrollbar-track { background: transparent; }
+  .output-body::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    gap: 12px;
+    color: var(--text-dim);
+  }
+
+  .empty-icon {
+    font-size: 36px;
+    opacity: 0.3;
+  }
+
+  .empty-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+
+  /* ── REPORT OUTPUT ── */
+  .report-content { display: none; }
+  .report-content.visible { display: block; }
+
+  /* Progress bar */
+  .scan-progress {
+    margin-bottom: 24px;
+    display: none;
+  }
+  .scan-progress.visible { display: block; }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  /* Module result cards */
+  .module-result {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    animation: slide-in 0.3s ease;
+  }
+
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .module-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--surface);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+
+  .module-result-header:hover { background: rgba(255,255,255,0.02); }
+
+  .module-result-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .severity-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .severity-critical { background: rgba(255,45,85,0.15); color: var(--danger); border: 1px solid rgba(255,45,85,0.3); }
+  .severity-high { background: rgba(255,159,28,0.12); color: var(--warn); border: 1px solid rgba(255,159,28,0.3); }
+  .severity-medium { background: rgba(0,180,216,0.12); color: var(--accent2); border: 1px solid rgba(0,180,216,0.3); }
+  .severity-low { background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); }
+  .severity-ok { background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); }
+
+  .module-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .module-score {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .module-result-body {
+    padding: 0 16px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease, padding 0.2s;
+  }
+
+  .module-result-body.open {
+    padding: 14px 16px;
+    max-height: 800px;
+  }
+
+  .finding {
+    display: flex;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .finding:last-child { border-bottom: none; }
+
+  .finding-icon { flex-shrink: 0; margin-top: 1px; }
+
+  .finding-text { color: var(--text); }
+  .finding-text strong { color: #fff; }
+  .finding-text .code {
+    background: rgba(0,245,160,0.07);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  .rec-box {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(0,245,160,0.04);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .rec-box strong { color: var(--accent); }
+
+  /* Summary bar */
+  .summary-bar {
+    display: none;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+  .summary-bar.visible { display: flex; }
+
+  .summary-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .summary-stat span {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .c-red { color: var(--danger); }
+  .c-warn { color: var(--warn); }
+  .c-blue { color: var(--accent2); }
+  .c-green { color: var(--accent); }
+
+  .export-btn {
+    margin-left: auto;
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+
+  .export-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Terminal line while streaming */
+  .terminal-line {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 4px;
+    animation: slide-in 0.2s ease;
+  }
+
+  .terminal-line::before {
+    content: '> ';
+    color: var(--text-dim);
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 13px;
+    background: var(--accent);
+    animation: cursor-blink 0.8s step-end infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+
+  @keyframes cursor-blink {
+    50% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon"></div>
+      <div>
+        <div class="logo-text">Fractia</div>
+        <div class="logo-sub">Security Audit Engine v1.0</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-dot"></div>
+      AGENT READY
+    </div>
+  </header>
+
+  <!-- TITLE -->
+  <div class="title-section">
+    <h1>Security <span>Audit</span><br>Workflow</h1>
+    <p>// ANÁLISIS EXTENSO DE VULNERABILIDADES POR MÓDULOS — POWERED BY CLAUDE AI</p>
+  </div>
+
+  <!-- CONFIG -->
+  <div class="app-config">
+    <div class="config-grid">
+      <div>
+        <div class="field-label">Nombre de la App</div>
+        <input class="field-input" id="appName" type="text" placeholder="ej. MyApp Backend" />
+      </div>
+      <div>
+        <div class="field-label">Stack / Tecnología</div>
+        <input class="field-input" id="appStack" type="text" placeholder="ej. Node.js, PostgreSQL, Redis" />
+      </div>
+      <div>
+        <div class="field-label">Nivel de Profundidad</div>
+        <select class="field-input field-select" id="depth">
+          <option value="standard">Standard</option>
+          <option value="deep" selected>Deep Audit</option>
+          <option value="full">Full Pentest Simulation</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modules-label">Módulos a auditar</div>
+    <div class="modules-grid" id="modulesGrid">
+      <div class="module-chip active" data-module="auth">
+        <div class="chip-dot"></div>Autenticación & JWT
+      </div>
+      <div class="module-chip active" data-module="api">
+        <div class="chip-dot"></div>API Endpoints
+      </div>
+      <div class="module-chip active" data-module="ddos">
+        <div class="chip-dot"></div>DDoS & Rate Limiting
+      </div>
+      <div class="module-chip active" data-module="sql">
+        <div class="chip-dot"></div>Inyecciones SQL/NoSQL
+      </div>
+      <div class="module-chip active" data-module="xss">
+        <div class="chip-dot"></div>XSS & CSRF
+      </div>
+      <div class="module-chip active" data-module="secrets">
+        <div class="chip-dot"></div>Secrets & Leaks
+      </div>
+      <div class="module-chip active" data-module="headers">
+        <div class="chip-dot"></div>Headers & CORS
+      </div>
+      <div class="module-chip active" data-module="deps">
+        <div class="chip-dot"></div>Dependencias
+      </div>
+      <div class="module-chip active" data-module="infra">
+        <div class="chip-dot"></div>Infraestructura
+      </div>
+      <div class="module-chip active" data-module="bots">
+        <div class="chip-dot"></div>Bots & Scraping
+      </div>
+      <div class="module-chip" data-module="crypto">
+        <div class="chip-dot"></div>Criptografía
+      </div>
+      <div class="module-chip" data-module="logs">
+        <div class="chip-dot"></div>Logging & Monitoreo
+      </div>
+    </div>
+
+    <div>
+      <div class="field-label" style="margin-bottom:6px">Contexto adicional (opcional)</div>
+      <textarea class="field-input" id="context" rows="2"
+        placeholder="ej. Tenemos usuarios externos, manejamos pagos con Stripe, usamos Cloudflare como CDN..."
+        style="resize:vertical"></textarea>
+    </div>
+
+    <button class="run-btn" id="runBtn" style="margin-top:16px" onclick="runAudit()">
+      ⚡ EJECUTAR AUDITORÍA DE SEGURIDAD
+    </button>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="output-panel">
+    <div class="output-header">
+      <div class="output-title">
+        <span>▣</span> AUDIT REPORT
+      </div>
+      <div class="scanning-badge" id="scanBadge">SCANNING...</div>
+    </div>
+
+    <div class="output-body" id="outputBody">
+      <!-- Empty state -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🛡</div>
+        <div class="empty-label">// Configura y ejecuta la auditoría para ver resultados</div>
+      </div>
+
+      <!-- Progress -->
+      <div class="scan-progress" id="scanProgress">
+        <div class="progress-label">
+          <span id="progressLabel">Inicializando agente...</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <!-- Terminal -->
+      <div id="terminalLines"></div>
+
+      <!-- Report -->
+      <div class="report-content" id="reportContent"></div>
+    </div>
+
+    <div class="summary-bar" id="summaryBar">
+      <div class="summary-stat"><span id="statCritical" class="c-red">0</span> Críticos</div>
+      <div class="summary-stat"><span id="statHigh" class="c-warn">0</span> Altos</div>
+      <div class="summary-stat"><span id="statMedium" class="c-blue">0</span> Medios</div>
+      <div class="summary-stat"><span id="statLow" class="c-green">0</span> Bajos</div>
+      <button class="export-btn" onclick="exportReport()">⬇ Exportar Reporte</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Module chip toggle
+document.querySelectorAll('.module-chip').forEach(chip => {
+  chip.addEventListener('click', () => chip.classList.toggle('active'));
+});
+
+// Server health check
+async function checkServerStatus() {
+  const statusEl = document.querySelector('.header-status');
+  try {
+    const res = await fetch('http://localhost:7777/api/health');
+    const data = await res.json();
+    statusEl.innerHTML = '<div class="status-dot"></div> AGENT READY';
+    statusEl.title = `Project: ${data.projectRoot} | Claude: ${data.claudeEnabled ? 'enabled' : 'disabled'}`;
+  } catch {
+    statusEl.innerHTML = '<div class="status-dot" style="background:var(--danger)"></div> SERVER OFFLINE';
+    statusEl.title = 'Run: node server.js in /workspace/fractia/';
+    statusEl.style.cursor = 'help';
+  }
+}
+checkServerStatus();
+
+let currentReportData = null;
+
+async function runAudit() {
+  const appName = document.getElementById('appName').value || 'Mi Aplicación';
+  const appStack = document.getElementById('appStack').value || 'No especificado';
+  const depth = document.getElementById('depth').value;
+  const context = document.getElementById('context').value;
+  const activeModules = [...document.querySelectorAll('.module-chip.active')]
+    .map(c => c.dataset.module);
+
+  if (activeModules.length === 0) {
+    alert('Selecciona al menos un módulo para auditar.');
+    return;
+  }
+
+  // UI state
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '🔍 ANALIZANDO...';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('scanBadge').classList.add('visible');
+  document.getElementById('scanProgress').classList.add('visible');
+  document.getElementById('reportContent').classList.remove('visible');
+  document.getElementById('reportContent').innerHTML = '';
+  document.getElementById('summaryBar').classList.remove('visible');
+  document.getElementById('terminalLines').innerHTML = '';
+  setProgress(0, 'Conectando con el agente...');
+
+  const moduleNames = {
+    auth: 'Autenticación & JWT',
+    api: 'API Endpoints',
+    ddos: 'DDoS & Rate Limiting',
+    sql: 'Inyecciones SQL/NoSQL',
+    xss: 'XSS & CSRF',
+    secrets: 'Secrets & Leaks',
+    headers: 'Headers HTTP & CORS',
+    deps: 'Dependencias',
+    infra: 'Infraestructura',
+    bots: 'Bots & Scraping',
+    crypto: 'Criptografía',
+    logs: 'Logging & Monitoreo'
+  };
+
+  // Terminal animation while the local server runs real analysis
+  const terminals = [
+    'Inicializando motor de análisis estático...',
+    `Escaneando archivos fuente del proyecto...`,
+    `Analizando ${activeModules.length} módulos de seguridad...`,
+    'Inspeccionando middleware de autenticación...',
+    'Verificando configuración de headers y CORS...',
+    'Buscando secretos y credenciales expuestas...',
+    'Compilando hallazgos confirmados...'
+  ];
+
+  let termIdx = 0;
+  const termInterval = setInterval(() => {
+    if (termIdx < terminals.length) {
+      addTerminalLine(terminals[termIdx]);
+      setProgress(Math.round((termIdx / terminals.length) * 60), terminals[termIdx]);
+      termIdx++;
+    }
+  }, 700);
+
+  try {
+    const response = await fetch('http://localhost:7777/api/audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modules: activeModules, depth, appName, appStack, context })
+    });
+
+    clearInterval(termInterval);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(err.error || `Server error: ${response.status}`);
+    }
+
+    setProgress(80, 'Procesando resultados...');
+    addTerminalLine('Análisis estático completado. Generando reporte...');
+
+    const report = await response.json();
+
+    currentReportData = report;
+    setProgress(100, 'Listo.');
+
+    setTimeout(() => {
+      document.getElementById('terminalLines').innerHTML = '';
+      document.getElementById('scanProgress').classList.remove('visible');
+      renderReport(report);
+    }, 600);
+
+  } catch (err) {
+    clearInterval(termInterval);
+    document.getElementById('terminalLines').innerHTML = '';
+    document.getElementById('scanProgress').classList.remove('visible');
+    if (err.message.includes('fetch') || err.message.includes('Failed')) {
+      addTerminalLine('ERROR: No se pudo conectar con el servidor local.');
+      addTerminalLine('→ Asegúrate de que Fractia está corriendo: node server.js');
+    } else {
+      addTerminalLine('ERROR: ' + err.message);
+    }
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ EJECUTAR AUDITORÍA DE SEGURIDAD';
+    document.getElementById('scanBadge').classList.remove('visible');
+  }
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
+
+function addTerminalLine(text) {
+  const div = document.createElement('div');
+  div.className = 'terminal-line';
+  div.textContent = text;
+  document.getElementById('terminalLines').appendChild(div);
+}
+
+function renderReport(report) {
+  const container = document.getElementById('reportContent');
+  container.innerHTML = '';
+
+  let critical = 0, high = 0, medium = 0, low = 0;
+
+  // Summary card
+  const summaryCard = document.createElement('div');
+  summaryCard.style.cssText = `
+    background: rgba(0,245,160,0.04); border: 1px solid rgba(0,245,160,0.15);
+    border-radius:6px; padding:14px 16px; margin-bottom:16px;
+    font-family:var(--font-mono); font-size:12px; color:var(--text); line-height:1.6;
+  `;
+  const score = report.risk_score || 50;
+  const scoreColor = score >= 70 ? 'var(--danger)' : score >= 40 ? 'var(--warn)' : 'var(--accent)';
+  summaryCard.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span style="color:var(--accent);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;">▸ RESUMEN EJECUTIVO</span>
+      <span style="color:${scoreColor};font-size:20px;font-weight:700;font-family:var(--font-display)">Riesgo: ${score}/100</span>
+    </div>
+    <div>${report.summary || ''}</div>
+  `;
+  container.appendChild(summaryCard);
+
+  // Module results
+  (report.modules || []).forEach((mod, idx) => {
+    const sev = mod.severity || 'medium';
+    if (sev === 'critical') critical++;
+    else if (sev === 'high') high++;
+    else if (sev === 'medium') medium++;
+    else low++;
+
+    const card = document.createElement('div');
+    card.className = 'module-result';
+
+    const findingsHTML = (mod.findings || []).map(f => {
+      const icon = f.type === 'vulnerability' ? '🔴' : f.type === 'warning' ? '🟡' : 'ℹ️';
+      const cveTag = f.cve ? `<span class="code">${f.cve}</span> ` : '';
+      const codeEx = f.code_example ? `<div style="margin-top:6px;padding:8px;background:rgba(0,0,0,0.3);border-radius:4px;font-size:11px;color:#7c9cbf;overflow-x:auto;white-space:pre-wrap">${escapeHTML(f.code_example)}</div>` : '';
+      return `
+        <div class="finding">
+          <div class="finding-icon">${icon}</div>
+          <div class="finding-text">
+            <strong>${f.title}</strong> ${cveTag}<br>
+            ${f.description}${codeEx}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const recsHTML = (mod.recommendations || []).map((r, i) =>
+      `<div style="margin-bottom:4px"><span style="color:var(--accent)">→</span> ${r}</div>`
+    ).join('');
+
+    card.innerHTML = `
+      <div class="module-result-header" onclick="toggleModule(this)">
+        <div class="module-result-left">
+          <span class="severity-badge severity-${sev}">${sev.toUpperCase()}</span>
+          <span class="module-name">${mod.name || mod.id}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="module-score">Score: ${mod.score || '?'}/100</span>
+          <span style="color:var(--text-dim);font-size:16px">▾</span>
+        </div>
+      </div>
+      <div class="module-result-body">
+        ${findingsHTML}
+        ${recsHTML ? `<div class="rec-box"><strong>RECOMENDACIONES</strong><br><br>${recsHTML}</div>` : ''}
+      </div>
+    `;
+
+    container.appendChild(card);
+
+    // Auto-open critical/high
+    if (sev === 'critical' || sev === 'high') {
+      setTimeout(() => {
+        card.querySelector('.module-result-body').classList.add('open');
+      }, idx * 80);
+    }
+  });
+
+  container.classList.add('visible');
+
+  // Summary bar
+  document.getElementById('statCritical').textContent = critical;
+  document.getElementById('statHigh').textContent = high;
+  document.getElementById('statMedium').textContent = medium;
+  document.getElementById('statLow').textContent = low;
+  document.getElementById('summaryBar').classList.add('visible');
+}
+
+function toggleModule(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('open');
+}
+
+function escapeHTML(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function exportReport() {
+  if (!currentReportData) return;
+  const blob = new Blob([JSON.stringify(currentReportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'fractia_security_audit.json';
+  a.click();
+}
+</script>
+</body>
+</html>
