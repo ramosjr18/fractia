@@ -1,5 +1,5 @@
 import path from 'path';
-import { readFile, grepFiles, BACKEND_ROOT, BACKEND_SRC, truncate } from '../utils/fileScanner.js';
+import { readFile, grepFiles, discoverStructure } from '../utils/fileScanner.js';
 
 const PATTERNS = [
   { regex: /(['"`])sk-[A-Za-z0-9]{20,}\1/,                        label: 'Hardcoded OpenAI/Stripe API key',        severity: 'critical' },
@@ -11,10 +11,21 @@ const PATTERNS = [
   { regex: /password\s*[:=]\s*['"`][^'"`]{6,}['"`]/i,              label: 'Hardcoded password string',             severity: 'high' },
   { regex: /secret\s*[:=]\s*['"`][^'"`]{6,}['"`]/i,                label: 'Hardcoded secret string',               severity: 'medium' },
   { regex: /api[_-]?key\s*[:=]\s*['"`][A-Za-z0-9._\-]{10,}['"`]/i, label: 'Hardcoded API key',                   severity: 'high' },
+  { regex: /(['"`])xox[baprs]-[A-Za-z0-9-]{10,}\1/,                label: 'Hardcoded Slack token',                 severity: 'critical' },
+  { regex: /(['"`])SG\.[A-Za-z0-9._-]{20,}\1/,                     label: 'Hardcoded SendGrid API key',            severity: 'critical' },
+  { regex: /(['"`])key-[a-z0-9]{32}\1/,                            label: 'Hardcoded Mailgun API key',             severity: 'critical' },
+  { regex: /(['"`])AC[a-z0-9]{32}\1/,                              label: 'Hardcoded Twilio Account SID',          severity: 'critical' },
+  { regex: /(['"`])EAA[a-zA-Z0-9]+\1/,                             label: 'Hardcoded Facebook Access Token',       severity: 'critical' },
+  { regex: /(['"`])ya29\.[A-Za-z0-9._-]+\1/,                       label: 'Hardcoded Google OAuth token',          severity: 'critical' },
+  { regex: /(['"`])rk_live_[A-Za-z0-9]{24}\1/,                     label: 'Hardcoded Stripe Restricted Key (live)', severity: 'critical' },
+  { regex: /(['"`])mongodb(\+srv)?:\/\/[^:]+:[^@]+@/,               label: 'Hardcoded MongoDB connection string with credentials', severity: 'critical' },
+  { regex: /(['"`])postgres:\/\/[^:]+:[^@]+@/,                      label: 'Hardcoded PostgreSQL DSN with credentials', severity: 'critical' },
+  { regex: /(['"`])redis:\/\/:[^@]+@/,                              label: 'Hardcoded Redis DSN with password',     severity: 'high' },
+  { regex: /private[_-]?key\s*[:=]\s*['"`]-----BEGIN/,             label: 'Hardcoded private key (PEM)',           severity: 'critical' },
+  { regex: /(['"`])[A-Za-z0-9+/]{40,}={0,2}\1/,                    label: 'Possible base64-encoded secret',        severity: 'medium' },
 ];
 
 function redact(line) {
-  // Replace quoted values with [REDACTED]
   return line.replace(/(['"`])[^'"`]{4,}\1/g, '\'[REDACTED]\'');
 }
 
@@ -23,17 +34,17 @@ export async function audit(depth) {
   const recommendations = [];
   const _codeSnippets = {};
 
-  const backendSrc = BACKEND_SRC();
-  const backendRoot = BACKEND_ROOT();
+  const structure = await discoverStructure();
+  const src = structure.srcDir;
+  const root = structure.files.packageJson ? path.dirname(structure.files.packageJson) : src;
 
   // --- Layer 1: Scan source files for hardcoded credential patterns ---
-  const sourceMatches = await grepFiles(backendSrc, PATTERNS.map(p => p.regex), {
+  const sourceMatches = await grepFiles(src, PATTERNS.map(p => p.regex), {
     extensions: ['.js'],
     contextLines: 1,
     excludeDirs: ['node_modules', '__tests__', 'tests'],
   });
 
-  // Group matches by pattern label to avoid 10 identical finding titles
   const grouped = new Map();
   for (const match of sourceMatches) {
     const matchedPattern = PATTERNS.find(p => p.regex.test(match.line));
@@ -48,7 +59,7 @@ export async function audit(depth) {
 
   for (const [label, { pattern, matches }] of grouped) {
     const locations = matches.slice(0, 5).map(m => {
-      const relPath = m.filePath.replace(backendRoot, 'backend');
+      const relPath = m.filePath.replace(root, '.');
       return `${relPath}:${m.lineNumber}`;
     }).join(', ');
     const extra = matches.length > 5 ? ` (+${matches.length - 5} more)` : '';
@@ -61,11 +72,19 @@ export async function audit(depth) {
     });
   }
 
-  // --- Layer 2: Analyze .env file ---
-  const envPath = path.join(backendRoot, '.env');
-  const envContent = await readFile(envPath);
+  // --- Layer 2: Analyze .env files (including staging/prod variants) ---
+  const envCandidates = ['.env', '.env.production', '.env.staging', '.env.local'];
+  let primaryEnvFound = false;
 
-  if (envContent) {
+  for (const envFile of envCandidates) {
+    const envPath = structure.files.env
+      ? path.join(path.dirname(structure.files.env), envFile)
+      : path.join(root, envFile);
+    const envContent = await readFile(envPath);
+    if (!envContent) continue;
+
+    if (envFile === '.env') primaryEnvFound = true;
+
     const envLines = envContent.split('\n');
     const weakSecrets = [
       { key: 'JWT_SECRET', weakValues: ['dev-', 'test-', 'default-', 'secret', 'changeme', '123', 'example'], severity: 'critical' },
@@ -85,18 +104,17 @@ export async function audit(depth) {
         if (isWeak) {
           findings.push({
             type: 'vulnerability',
-            title: `${key} has a weak/development value in .env`,
-            description: `${key}=[REDACTED] — the current value matches known weak/dev patterns. If this .env is used in production or staged environments, this represents a critical exposure.`,
+            title: `${key} has a weak/development value in ${envFile}`,
+            description: `${key}=[REDACTED] — the current value matches known weak/dev patterns in ${envFile}. If used in production or staging, this is a critical exposure.`,
             code_example: `${key}=[REDACTED]`,
             cve: null,
           });
         }
-        // Special case: CORS_ORIGIN=* is always a finding regardless of "weakness"
         if (key === 'CORS_ORIGIN' && val === '*') {
           findings.push({
             type: 'vulnerability',
-            title: 'CORS_ORIGIN is explicitly set to wildcard (*) in .env',
-            description: 'The active .env configuration sets CORS to accept requests from any origin. This is only acceptable for fully public APIs with no authentication.',
+            title: `CORS_ORIGIN is explicitly set to wildcard (*) in ${envFile}`,
+            description: `The ${envFile} configuration sets CORS to accept requests from any origin. Only acceptable for fully public APIs with no authentication.`,
             code_example: 'CORS_ORIGIN=*',
             cve: null,
           });
@@ -104,31 +122,35 @@ export async function audit(depth) {
       }
     }
 
-    // Check .gitignore includes .env
-    const gitignorePath = path.join(backendRoot, '.gitignore');
-    const gitignore = await readFile(gitignorePath);
-    if (gitignore && !gitignore.includes('.env')) {
-      findings.push({
-        type: 'vulnerability',
-        title: '.env not listed in .gitignore',
-        description: 'The backend .gitignore does not include .env. Real credentials could be committed to version control.',
-        code_example: null,
-        cve: null,
-      });
+    // Check .gitignore includes this env file (for .env and .env.local)
+    if (envFile === '.env' || envFile === '.env.local') {
+      const gitignorePath = structure.files.gitignore || path.join(root, '.gitignore');
+      const gitignore = await readFile(gitignorePath);
+      if (gitignore && !gitignore.includes(envFile)) {
+        findings.push({
+          type: 'vulnerability',
+          title: `${envFile} not listed in .gitignore`,
+          description: `The .gitignore does not include ${envFile}. Real credentials could be committed to version control.`,
+          code_example: null,
+          cve: null,
+        });
+      }
     }
 
-    _codeSnippets['backend/.env (sanitized)'] = envLines
-      .filter(l => !l.includes('=') || l.startsWith('#') || l.trim() === '')
-      .concat(envLines.filter(l => l.includes('=') && !l.startsWith('#')).map(l => {
+    _codeSnippets[`${envFile} (sanitized)`] = envLines
+      .map(l => {
+        if (!l.includes('=') || l.startsWith('#') || !l.trim()) return l;
         const [k] = l.split('=');
         return `${k}=[REDACTED]`;
-      }))
+      })
       .join('\n');
-  } else {
+  }
+
+  if (!primaryEnvFound) {
     findings.push({
       type: 'info',
       title: '.env file not found',
-      description: `No .env file found at ${envPath}. Ensure environment variables are properly managed in your deployment.`,
+      description: `No .env file found under project root. Ensure environment variables are properly managed in your deployment.`,
       code_example: null,
       cve: null,
     });

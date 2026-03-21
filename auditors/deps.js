@@ -4,7 +4,16 @@ import { readFile, BACKEND_ROOT } from '../utils/fileScanner.js';
 
 // Fallback: known vulnerable version ranges
 const KNOWN_ISSUES = {
-  'multer': { below: '1.4.5-lts.2', issue: 'ReDoS vulnerability in content-type parsing', severity: 'high', cve: 'CVE-2022-24434' },
+  'multer':        { below: '1.4.5-lts.2', issue: 'ReDoS vulnerability in content-type parsing',   severity: 'high',     cve: 'CVE-2022-24434'  },
+  'jsonwebtoken':  { below: '9.0.0',        issue: 'Algorithm confusion vulnerability',              severity: 'critical', cve: 'CVE-2022-23529'  },
+  'node-fetch':    { below: '2.6.7',        issue: 'Exposure of sensitive information',              severity: 'high',     cve: 'CVE-2022-0235'   },
+  'axios':         { below: '1.6.0',        issue: 'SSRF and credential leakage',                   severity: 'high',     cve: 'CVE-2023-45857'  },
+  'lodash':        { below: '4.17.21',      issue: 'Prototype pollution',                           severity: 'high',     cve: 'CVE-2021-23337'  },
+  'minimist':      { below: '1.2.6',        issue: 'Prototype pollution',                           severity: 'medium',   cve: 'CVE-2021-44906'  },
+  'express':       { below: '4.19.0',       issue: 'Path traversal via open redirect',              severity: 'medium',   cve: 'CVE-2024-29041'  },
+  'sharp':         { below: '0.32.6',       issue: 'Heap buffer overflow',                          severity: 'high',     cve: 'CVE-2023-4863'   },
+  'semver':        { below: '7.5.2',        issue: 'ReDoS vulnerability',                           severity: 'medium',   cve: 'CVE-2022-25883'  },
+  'tough-cookie':  { below: '4.1.3',        issue: 'Prototype pollution',                           severity: 'medium',   cve: 'CVE-2023-26136'  },
 };
 
 function semverBelow(version, threshold) {

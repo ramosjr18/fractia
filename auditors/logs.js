@@ -1,137 +1,140 @@
 import path from 'path';
-import { readFile, readDir, grepFiles, BACKEND_SRC, truncate } from '../utils/fileScanner.js';
+import { grepFiles, discoverStructure } from '../utils/fileScanner.js';
 
 export async function audit(depth) {
   const findings = [];
   const recommendations = [];
   const _codeSnippets = {};
 
-  const src = BACKEND_SRC();
-  const loggingDir = path.join(src, 'modules', 'logging', 'services');
+  const structure = await discoverStructure();
+  const src = structure.srcDir;
+  const controllersDir = structure.dirs.controllers || path.join(src, 'controllers');
+  const servicesDir = structure.dirs.services || path.join(src, 'services');
+  const workersDir = structure.dirs.workers || path.join(src, 'workers');
 
-  // --- Check SecurityLogger implementation ---
-  const secLogPath = path.join(loggingDir, 'security-logger.service.js');
-  const secLog = await readFile(secLogPath);
+  // --- Structured logging library detection ---
+  const loggerMatches = await grepFiles(src, [
+    /winston|pino|bunyan|morgan|log4js/i,
+  ], { extensions: ['.js'] });
 
-  if (secLog) {
-    _codeSnippets['modules/logging/services/security-logger.service.js'] = truncate(secLog, 1500);
-
-    // Detect if the log() method body is effectively empty (only comments/whitespace)
-    const stripped = secLog
-      .replace(/\/\/.*$/gm, '')          // remove line comments
-      .replace(/\/\*[\s\S]*?\*\//g, '')  // remove block comments
-      .replace(/\s+/g, ' ');
-
-    const hasImplementation = /\.create\(|\.insert\(|\.log\(|prisma\.|db\.|save\(|persist\(|emit\(|winston|pino|console\.log/.test(stripped);
-
-    if (!hasImplementation) {
-      findings.push({
-        type: 'vulnerability',
-        title: 'SecurityLogger.log() is an empty stub — zero security events are persisted',
-        description: 'The SecurityLogger service exists but its log() method has no implementation. Security events (failed logins, access denied, cross-tenant attempts, token errors) are silently dropped. Incident detection is impossible.',
-        code_example: '// security-logger.service.js\nlog(event) {\n  // TODO: implement\n}',
-        cve: null,
-      });
-    }
-  } else {
+  if (loggerMatches.length === 0) {
     findings.push({
       type: 'warning',
-      title: 'SecurityLogger service file not found',
-      description: `Expected at modules/logging/services/security-logger.service.js. Security event logging may not be implemented.`,
+      title: 'No structured logging library detected',
+      description: 'No winston, pino, bunyan, morgan, or log4js usage found in source. Without a structured logger, logs lack severity levels, correlation IDs, and machine-readable format — making incident response harder.',
       code_example: null,
       cve: null,
     });
   }
 
-  // --- Check AuditLogger implementation ---
-  const auditLogPath = path.join(loggingDir, 'audit-logger.service.js');
-  const auditLog = await readFile(auditLogPath);
+  // --- console.log count in controllers/services (not tests) ---
+  const consoleDirs = [controllersDir, servicesDir].filter(Boolean);
+  let totalConsoleLogs = 0;
+  const consoleLogFiles = new Set();
 
-  if (auditLog) {
-    _codeSnippets['modules/logging/services/audit-logger.service.js'] = truncate(auditLog, 1500);
-
-    const stripped = auditLog
-      .replace(/\/\/.*$/gm, '')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\s+/g, ' ');
-
-    const hasImplementation = /\.create\(|\.insert\(|prisma\.|db\.|save\(|persist\(|emit\(/.test(stripped);
-
-    if (!hasImplementation) {
-      findings.push({
-        type: 'vulnerability',
-        title: 'AuditLogger.log() is an empty stub — no audit trail',
-        description: 'The AuditLogger service is not persisting events to the database. User actions like role changes, candidate deletions, job closings, and invitations leave no audit trail. This violates compliance requirements (GDPR, SOC2).',
-        code_example: '// audit-logger.service.js\nlog(event) {\n  // TODO: implement\n}',
-        cve: null,
-      });
+  for (const dir of consoleDirs) {
+    const matches = await grepFiles(dir, [/console\.log\s*\(/], { extensions: ['.js'] });
+    for (const m of matches) {
+      if (!m.filePath.includes('.test.') && !m.filePath.includes('.spec.')) {
+        totalConsoleLogs++;
+        consoleLogFiles.add(path.basename(m.filePath));
+      }
     }
   }
 
-  // --- Check LogSanitizer usage ---
-  const sanitizerPath = path.join(src, 'modules', 'logging', 'services', 'log-sanitizer.service.js');
-  const sanitizer = await readFile(sanitizerPath);
-
-  if (sanitizer) {
-    // Check if sanitizer is actually called anywhere else
-    const usageMatches = await grepFiles(src, [/logSanitizer\.sanitize|sanitizer\.sanitize/i], {
-      extensions: ['.js'],
-    });
-
-    const externalUsage = usageMatches.filter(m => !m.filePath.includes('log-sanitizer'));
-    if (externalUsage.length === 0) {
-      findings.push({
-        type: 'warning',
-        title: 'LogSanitizer is defined but never called',
-        description: 'The logSanitizer service exists to redact passwords, tokens, and PII from logs, but no code outside its own file calls sanitizer.sanitize(). Sensitive data may be logged in plain text.',
-        code_example: null,
-        cve: null,
-      });
-    }
-  }
-
-  // --- Check workers for console.log usage ---
-  const workersDir = path.join(src, 'workers');
-  const consoleMatches = await grepFiles(workersDir, [/console\.(log|warn|error|info)/], {
-    extensions: ['.js'],
-  });
-
-  if (consoleMatches.length > 0) {
-    const workerFiles = [...new Set(consoleMatches.map(m => path.basename(m.filePath)))];
+  if (totalConsoleLogs > 10) {
     findings.push({
       type: 'warning',
-      title: `Workers use console.log directly (${workerFiles.length} file(s))`,
-      description: `Workers ${workerFiles.join(', ')} use console.log instead of the structured logger. This loses correlation IDs, tenant context, and structured fields — making worker failures impossible to trace back to original requests.`,
-      code_example: `// In workers — replace:\nconsole.log('Processing job', jobId)\n// With:\nappLogger.info('Processing job', { jobId, traceId, tenantId })`,
+      title: `${totalConsoleLogs} console.log() calls in controllers/services (${consoleLogFiles.size} files)`,
+      description: `Excessive console.log usage in: ${[...consoleLogFiles].slice(0, 5).join(', ')}. This leaks internal data to server logs without severity control. Replace with a structured logger that supports log levels and redaction.`,
+      code_example: null,
       cve: null,
     });
   }
 
-  // --- Check correlation ID propagation in workers ---
-  const workerFiles = await readDir(workersDir, ['.js']);
-  for (const { filePath, content } of workerFiles) {
-    if (!/correlationId|traceId|requestId/i.test(content)) {
+  // --- Sensitive data logged directly ---
+  const sensitiveLogPatterns = [
+    /console\.(log|info|warn|error)\s*\(.*password/i,
+    /console\.(log|info|warn|error)\s*\(.*token/i,
+    /console\.(log|info|warn|error)\s*\(.*secret/i,
+    /logger\.\w+\s*\(.*password/i,
+  ];
+
+  const sensitiveLogMatches = await grepFiles(src, sensitiveLogPatterns, { extensions: ['.js'] });
+  const sensitiveFiltered = sensitiveLogMatches.filter(m =>
+    !m.filePath.includes('.test.') && !m.filePath.includes('.spec.')
+  );
+
+  if (sensitiveFiltered.length > 0) {
+    const locs = sensitiveFiltered.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
+    findings.push({
+      type: 'vulnerability',
+      title: 'Sensitive data (password/token/secret) logged directly',
+      description: `Found ${sensitiveFiltered.length} location(s) where passwords, tokens, or secrets appear in log statements at: ${locs}. These values will appear in plain text in log files, which may be persisted to disk, shipped to log aggregators, or readable by support teams.`,
+      code_example: sensitiveFiltered[0]?.line.trim() || null,
+      cve: null,
+    });
+  }
+
+  // --- Log sanitization check ---
+  const sanitizeMatches = await grepFiles(src, [
+    /sanitize|redact|mask/i,
+  ], { extensions: ['.js'] });
+
+  if (sanitizeMatches.length === 0) {
+    findings.push({
+      type: 'warning',
+      title: 'No log sanitization/redaction detected',
+      description: 'No sanitize, redact, or mask pattern found in source. Without log sanitization, sensitive fields (tokens, passwords, PII) from request bodies may appear in server logs.',
+      code_example: null,
+      cve: null,
+    });
+  }
+
+  // --- Workers: console.log and correlation ID ---
+  if (workersDir) {
+    const workerConsoleMatches = await grepFiles(workersDir, [/console\.(log|warn|error|info)/], {
+      extensions: ['.js'],
+    });
+
+    if (workerConsoleMatches.length > 0) {
+      const workerFiles = [...new Set(workerConsoleMatches.map(m => path.basename(m.filePath)))];
       findings.push({
         type: 'warning',
-        title: `Worker ${path.basename(filePath)} has no correlation ID`,
-        description: `${path.basename(filePath)} does not propagate correlation/trace IDs. When this worker fails, you cannot link the failure back to the original HTTP request or tenant.`,
+        title: `Workers use console.log directly (${workerFiles.length} file(s))`,
+        description: `Workers ${workerFiles.join(', ')} use console.log instead of a structured logger. This loses correlation IDs, tenant context, and structured fields — making worker failures impossible to trace back to requests.`,
+        code_example: '// Replace:\nconsole.log(\'Processing job\', jobId)\n// With:\nlogger.info(\'Processing job\', { jobId, traceId })',
+        cve: null,
+      });
+    }
+
+    const workerCorrelationMatches = await grepFiles(workersDir, [
+      /correlationId|traceId|requestId/i,
+    ], { extensions: ['.js'] });
+
+    if (workerCorrelationMatches.length === 0 && workerConsoleMatches.length > 0) {
+      findings.push({
+        type: 'warning',
+        title: 'Workers have no correlation/trace ID propagation',
+        description: 'Workers do not propagate correlation or trace IDs. When a worker fails, you cannot link the failure back to the original HTTP request or tenant context.',
         code_example: null,
         cve: null,
       });
-      break; // Only report once
     }
   }
 
   recommendations.push(
-    'Implement SecurityLogger.log() to persist to a security_events table. Minimum events: login failures, 403/401 responses, cross-tenant access attempts.',
-    'Implement AuditLogger.log() to persist to an audit_log table. Include: actor_id, tenant_id, action, resource_type, resource_id, timestamp.',
-    'Wire LogSanitizer into AppLogger so all log calls automatically redact sensitive fields.',
-    'Replace console.log in workers with the structured appLogger, passing traceId and tenantId from the job data.',
+    'Adopt a structured logger (pino or winston) with log levels, correlation IDs, and machine-readable JSON output.',
+    'Add a log redaction layer that strips passwords, tokens, and sensitive PII before any log output.',
+    'Replace console.log in controllers/services/workers with the structured logger.',
+    'In workers, always propagate traceId and tenantId from the job payload into every log call.',
+    'Set up log shipping to a SIEM (Datadog, Splunk, ELK) with alerting on error rates and auth failures.',
   );
 
   const criticalCount = findings.filter(f => f.type === 'vulnerability').length;
-  const severity = criticalCount >= 2 ? 'critical' : criticalCount === 1 ? 'high' : findings.some(f => f.type === 'warning') ? 'medium' : 'ok';
-  const score = Math.max(0, 100 - criticalCount * 25 - findings.filter(f => f.type === 'warning').length * 8);
+  const warnCount = findings.filter(f => f.type === 'warning').length;
+  const severity = criticalCount >= 1 ? 'high' : warnCount >= 3 ? 'medium' : warnCount >= 1 ? 'low' : 'ok';
+  const score = Math.max(0, 100 - criticalCount * 25 - warnCount * 8);
 
   return { id: 'logs', name: 'Logging & Monitoreo', severity, score, findings, recommendations, _codeSnippets };
 }

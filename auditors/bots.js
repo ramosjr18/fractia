@@ -1,12 +1,14 @@
 import path from 'path';
-import { readFile, grepFiles, BACKEND_SRC, truncate } from '../utils/fileScanner.js';
+import { grepFiles, discoverStructure } from '../utils/fileScanner.js';
 
 export async function audit(depth) {
   const findings = [];
   const recommendations = [];
   const _codeSnippets = {};
 
-  const src = BACKEND_SRC();
+  const structure = await discoverStructure();
+  const src = structure.srcDir;
+  const routesDir = structure.dirs.routes || src;
 
   // --- CAPTCHA check ---
   const captchaMatches = await grepFiles(src, [
@@ -32,7 +34,7 @@ export async function audit(depth) {
     findings.push({
       type: 'info',
       title: 'User-Agent not logged or filtered',
-      description: 'No User-Agent inspection found in middleware or controllers. Logging User-Agent helps identify bot patterns in audit logs. Blocking known bad agents adds defense-in-depth.',
+      description: 'No User-Agent inspection found in middleware or controllers. Logging User-Agent helps identify bot patterns. Blocking known bad agents adds defense-in-depth.',
       code_example: null,
       cve: null,
     });
@@ -53,30 +55,34 @@ export async function audit(depth) {
     });
   }
 
-  // --- Check LinkedIn extension import endpoint rate limit ---
-  const extensionRoutePath = path.join(src, 'routes', 'extension.routes.js');
-  const extensionRoute = await readFile(extensionRoutePath);
-  if (extensionRoute) {
-    if (/extensionImportLimiter|rateLimit/i.test(extensionRoute)) {
-      findings.push({
-        type: 'info',
-        title: 'Extension import endpoints have rate limiting (good)',
-        description: 'The extension import routes use extensionImportLimiter. This protects against bulk scraping via the extension API.',
-        code_example: null,
-        cve: null,
-      });
-    } else {
-      findings.push({
-        type: 'warning',
-        title: 'Extension import endpoint may lack rate limiting',
-        description: 'The extension route file does not show clear rate limiting. If this endpoint accepts LinkedIn profile imports, it could be used for bulk scraping or data harvesting.',
-        code_example: null,
-        cve: null,
-      });
-    }
+  // --- Check sensitive endpoints for rate limiting ---
+  const sensitivePatterns = ['/register', '/signup', '/forgot', '/reset'];
+  const rateLimitPattern = /rateLimit|rate-limit|throttle|limiter/i;
+
+  // Grep all route files for sensitive endpoint patterns
+  const sensitiveRouteMatches = await grepFiles(routesDir, [
+    /router\.(get|post|put|delete|patch)\s*\(\s*['"`][^'"`]*(register|signup|forgot|reset)[^'"`]*['"`]/i,
+  ], { extensions: ['.js'], contextLines: 5 });
+
+  const unprotectedSensitive = sensitiveRouteMatches.filter(m => {
+    const context = m.context.before.join('\n') + m.line + m.context.after.join('\n');
+    return !rateLimitPattern.test(context);
+  });
+
+  if (unprotectedSensitive.length > 0) {
+    const locs = unprotectedSensitive.slice(0, 5).map(m => {
+      return `${path.basename(m.filePath)}:${m.lineNumber} (${m.line.match(/['"`]([^'"`]+)['"`]/)?.[1] || 'route'})`;
+    }).join(', ');
+    findings.push({
+      type: 'warning',
+      title: 'Registration/reset endpoints may lack rate limiting',
+      description: `Found ${unprotectedSensitive.length} sensitive endpoint(s) without a visible rate limiter in context: ${locs}. These endpoints are prime targets for credential stuffing, account enumeration, and automated abuse.`,
+      code_example: '// Add rate limiting:\nrouter.post(\'/register\', registerLimiter, registerController)',
+      cve: null,
+    });
   }
 
-  // --- Check for login velocity detection ---
+  // --- Login velocity detection ---
   const loginLogMatches = await grepFiles(src, [/LoginLog|loginLog|login_log/i], { extensions: ['.js'] });
   if (loginLogMatches.length === 0) {
     findings.push({
@@ -89,10 +95,10 @@ export async function audit(depth) {
   }
 
   recommendations.push(
-    'Add Cloudflare Turnstile (invisible CAPTCHA) to /auth/register and /auth/forgot-password endpoints.',
-    'Log User-Agent in the SecurityLogger for auth events to aid bot pattern analysis.',
-    'Use the LoginLog model to implement login velocity checks: lock account after N failures per hour.',
-    'For the extension import endpoint, consider requiring authenticated requests to be tied to a verified TOTP device.',
+    'Add Cloudflare Turnstile (invisible CAPTCHA) to /register and /forgot-password endpoints.',
+    'Log User-Agent for all auth events to aid bot pattern analysis.',
+    'Add rate limiting to all registration, login, forgot-password, and reset-password endpoints.',
+    'Use login velocity tracking to lock accounts after N failures per hour, independent of per-IP rate limits.',
   );
 
   const warnCount = findings.filter(f => f.type === 'warning').length;

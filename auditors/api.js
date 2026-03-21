@@ -1,23 +1,24 @@
 import path from 'path';
-import { listFiles, readFile, BACKEND_SRC, truncate } from '../utils/fileScanner.js';
+import { listFiles, readFile, grepFiles, discoverStructure, truncate } from '../utils/fileScanner.js';
 
-const AUTH_MIDDLEWARE = ['authenticate', 'requireOrgRole', 'requireModuleRole', 'authorize', 'authenticateExtension', 'optionalAuthenticate'];
+const AUTH_MIDDLEWARE = [
+  'authenticate', 'requireAuth', 'isAuthenticated', 'verifyToken',
+  'authMiddleware', 'checkAuth', 'protect', 'authorize', 'guard',
+  'requireOrgRole', 'requireModuleRole', 'authenticateExtension',
+  'optionalAuthenticate', 'passport.authenticate', 'ensureLoggedIn',
+];
 
 /**
- * Parse a route file to find:
- * 1. Whether router.use(authenticate) is present (protects all routes)
- * 2. Individual route definitions and their middleware chains
+ * Parse a route file to find routes without auth middleware.
  */
 function parseRouteFile(content, filePath) {
   const issues = [];
   const lines = content.split('\n');
 
-  // Check for global router.use(authenticate) — protects all routes in file
   const hasGlobalAuth = AUTH_MIDDLEWARE.some(m => {
-    return new RegExp(`router\\.use\\(.*\\b${m}\\b`).test(content);
+    return new RegExp(`router\\.use\\(.*\\b${m.replace('.', '\\.')}\\b`).test(content);
   });
 
-  // Find all route definitions: router.get/post/put/delete/patch(path, ...handlers)
   const routeRegex = /router\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/g;
   let match;
 
@@ -25,18 +26,23 @@ function parseRouteFile(content, filePath) {
     const method = match[1].toUpperCase();
     const routePath = match[2];
     const lineIndex = content.slice(0, match.index).split('\n').length - 1;
-
-    // Get the full route declaration (look ahead up to 5 lines)
     const routeBlock = lines.slice(lineIndex, lineIndex + 6).join('\n');
 
-    // Check if any auth middleware appears in the route block
-    const hasAuth = AUTH_MIDDLEWARE.some(m => new RegExp(`\\b${m}\\b`).test(routeBlock));
+    const hasAuth = AUTH_MIDDLEWARE.some(m => new RegExp(`\\b${m.replace('.', '\\.')}\\b`).test(routeBlock));
 
     if (!hasGlobalAuth && !hasAuth) {
-      // Skip known intentionally public patterns
-      const isPublicOk = ['/health', '/webhook', '/callback', '/public'].some(p => routePath.includes(p));
-      if (!isPublicOk) {
-        issues.push({ method, routePath, lineNumber: lineIndex + 1, filePath });
+      const isPublicOk = ['/health', '/webhook', '/callback', '/public', '/login', '/register', '/signup', '/forgot', '/reset', '/verify'].some(p => routePath.includes(p));
+
+      // Admin/internal routes without auth are always flagged
+      const isCritical = /\/admin|\/internal/.test(routePath);
+      const isDebug = /\/debug|\/test|\/dev/.test(routePath);
+
+      if (isCritical) {
+        issues.push({ method, routePath, lineNumber: lineIndex + 1, filePath, severity: 'vulnerability', reason: 'admin/internal route without auth' });
+      } else if (isDebug) {
+        issues.push({ method, routePath, lineNumber: lineIndex + 1, filePath, severity: 'warning', reason: 'debug/test route exposed' });
+      } else if (!isPublicOk) {
+        issues.push({ method, routePath, lineNumber: lineIndex + 1, filePath, severity: 'warning', reason: 'no explicit auth middleware' });
       }
     }
   }
@@ -49,80 +55,101 @@ export async function audit(depth) {
   const recommendations = [];
   const _codeSnippets = {};
 
-  const src = BACKEND_SRC();
-  const routesDir = path.join(src, 'routes');
+  const structure = await discoverStructure();
+  const src = structure.srcDir;
 
+  // Discover routes directory
+  const routesDir = structure.dirs.routes || src;
   const routeFiles = await listFiles(routesDir, '.js');
-  const unprotectedRoutes = [];
+
+  const criticalRoutes = [];
+  const warnRoutes = [];
 
   for (const filePath of routeFiles) {
     const content = await readFile(filePath);
     if (!content) continue;
 
     const issues = parseRouteFile(content, filePath);
-    unprotectedRoutes.push(...issues);
+    for (const issue of issues) {
+      if (issue.severity === 'vulnerability') criticalRoutes.push(issue);
+      else warnRoutes.push(issue);
+    }
 
-    // Capture snippets for critical files
+    // Capture snippets for the first few route files
     const basename = path.basename(filePath);
-    if (['auth.routes.js', 'admin.routes.js', 'index.js'].includes(basename)) {
-      _codeSnippets[`routes/${basename}`] = truncate(content, 1500);
+    if (_codeSnippets && Object.keys(_codeSnippets).length < 3) {
+      _codeSnippets[`routes/${basename}`] = truncate(content, 1200);
     }
   }
 
-  // Check for test/debug routes exposed in production
-  const authRoutesPath = path.join(routesDir, 'auth.routes.js');
-  const authRoutes = await readFile(authRoutesPath);
-  if (authRoutes) {
-    const testRouteMatch = authRoutes.match(/router\.(get|post|put|delete)\s*\(\s*['"`][^'"`]*test[^'"`]*['"`]/i);
-    if (testRouteMatch) {
-      const lineNum = authRoutes.slice(0, testRouteMatch.index).split('\n').length;
-      findings.push({
-        type: 'vulnerability',
-        title: 'Test/debug route exposed without authentication',
-        description: `A route matching "test" pattern was found in auth.routes.js:${lineNum} with no auth middleware. Debug endpoints in production can leak internal state or bypass controls.`,
-        code_example: testRouteMatch[0],
-        cve: null,
-      });
-    }
-  }
-
-  // Check admin routes for legacy role checks
-  const adminRoutesPath = path.join(routesDir, 'admin.routes.js');
-  const adminRoutes = await readFile(adminRoutesPath);
-  if (adminRoutes && /authorize\s*\(\s*['"`]admin['"`]/.test(adminRoutes)) {
-    findings.push({
-      type: 'warning',
-      title: 'Admin routes use legacy string-based role check',
-      description: 'admin.routes.js uses authorize(\'admin\', \'ADMIN\') instead of the current requireOrgRole() system. The old authorize() does string comparison which may not align with the current role hierarchy (OWNER=40, ADMIN=30, MEMBER=20, VIEWER=10). This could allow unintended access if role names drift.',
-      code_example: 'authorize(\'admin\', \'ADMIN\')  // Use: requireOrgRole(\'ADMIN\')',
-      cve: null,
-    });
-  }
-
-  // Report unprotected routes
-  if (unprotectedRoutes.length > 0) {
-    const routeList = unprotectedRoutes
-      .slice(0, 10)
+  // Report admin/internal routes without auth as vulnerabilities
+  if (criticalRoutes.length > 0) {
+    const routeList = criticalRoutes.slice(0, 5)
       .map(r => `${r.method} ${path.basename(r.filePath).replace('.routes.js', '')}${r.routePath}`)
       .join(', ');
-
     findings.push({
-      type: 'warning',
-      title: `${unprotectedRoutes.length} route(s) detected without explicit auth middleware`,
-      description: `Routes without authenticate/requireOrgRole in their declaration: ${routeList}${unprotectedRoutes.length > 10 ? ` (+${unprotectedRoutes.length - 10} more)` : ''}. Verify each is intentionally public.`,
+      type: 'vulnerability',
+      title: `${criticalRoutes.length} admin/internal route(s) without authentication`,
+      description: `Routes under /admin or /internal without auth middleware: ${routeList}${criticalRoutes.length > 5 ? ` (+${criticalRoutes.length - 5} more)` : ''}. These endpoints expose privileged operations to unauthenticated requests.`,
       code_example: null,
       cve: null,
     });
   }
 
-  // Check index.js for tenant context on all protected routes
+  // Debug/test routes as warning
+  const debugRoutes = warnRoutes.filter(r => r.reason === 'debug/test route exposed');
+  if (debugRoutes.length > 0) {
+    const routeList = debugRoutes.slice(0, 5)
+      .map(r => `${r.method} ${path.basename(r.filePath).replace('.routes.js', '')}${r.routePath}`)
+      .join(', ');
+    findings.push({
+      type: 'warning',
+      title: `Debug/test routes detected: ${routeList}`,
+      description: 'Routes matching /debug, /test, or /dev patterns are exposed. Debug endpoints in production can leak internal state or bypass controls. Gate them with auth or remove in production.',
+      code_example: null,
+      cve: null,
+    });
+  }
+
+  // Other unprotected routes
+  const genericWarnRoutes = warnRoutes.filter(r => r.reason === 'no explicit auth middleware');
+  if (genericWarnRoutes.length > 0) {
+    const routeList = genericWarnRoutes
+      .slice(0, 10)
+      .map(r => `${r.method} ${path.basename(r.filePath).replace('.routes.js', '')}${r.routePath}`)
+      .join(', ');
+    findings.push({
+      type: 'warning',
+      title: `${genericWarnRoutes.length} route(s) detected without explicit auth middleware`,
+      description: `Routes without auth in their declaration: ${routeList}${genericWarnRoutes.length > 10 ? ` (+${genericWarnRoutes.length - 10} more)` : ''}. Verify each is intentionally public.`,
+      code_example: null,
+      cve: null,
+    });
+  }
+
+  // Check for test/debug routes anywhere in source using grep
+  const testRouteMatches = await grepFiles(routesDir, [
+    /router\.(get|post|put|delete)\s*\(\s*['"`][^'"`]*(test|debug|dev)[^'"`]*['"`]/i,
+  ], { extensions: ['.js'] });
+
+  if (testRouteMatches.length > 0 && debugRoutes.length === 0) {
+    findings.push({
+      type: 'warning',
+      title: 'Test/debug route patterns found in route files',
+      description: `Found routes matching test/debug patterns: ${testRouteMatches.map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ')}. Review that these are not exposed in production.`,
+      code_example: testRouteMatches[0]?.line.trim() || null,
+      cve: null,
+    });
+  }
+
+  // Check if any route index has tenant context enforcement
   const indexPath = path.join(routesDir, 'index.js');
   const indexContent = await readFile(indexPath);
-  if (indexContent && !/runInTenantContext|tenantContext|setTenantId/i.test(indexContent)) {
+  if (indexContent && !/tenantContext|runInTenantContext|setTenantId/i.test(indexContent)) {
     findings.push({
       type: 'warning',
       title: 'No explicit cross-tenant enforcement middleware visible in routes index',
-      description: 'The routes/index.js does not show a global middleware that enforces tenantId scoping on all authenticated routes. If individual controllers query without tenantId filtering, cross-tenant data access is possible.',
+      description: 'The routes/index.js does not show a global middleware enforcing tenantId scoping. If individual controllers query without tenant filtering, cross-tenant data access is possible.',
       code_example: null,
       cve: null,
     });
@@ -130,8 +157,8 @@ export async function audit(depth) {
 
   recommendations.push(
     'Add router.use(authenticate) at the top of every protected route file instead of per-route.',
-    'Replace authorize(\'admin\') with requireOrgRole(\'ADMIN\') in admin routes to use the hierarchical role system.',
-    'Remove or gate the /test-email route with authenticate + requireOrgRole(\'ADMIN\').',
+    'Gate /admin and /internal routes with both authenticate and a role check (e.g., requireOrgRole(\'ADMIN\')).',
+    'Remove or disable /debug, /test, /dev routes in production. Use NODE_ENV checks or separate router mounts.',
     'Add an integration test that verifies every non-public route returns 401 when called without a token.',
   );
 
