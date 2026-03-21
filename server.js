@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import readline from 'readline';
+import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { enrichWithClaude } from './utils/claudeClient.js';
@@ -161,6 +162,18 @@ app.post('/api/audit', async (req, res) => {
   }
 });
 
+// ── Persist a key=value pair into .env ──────────────────────────────────────
+function saveKeyToEnv(key, value) {
+  const envPath = path.join(__dirname, '.env');
+  let content = '';
+  try { content = readFileSync(envPath, 'utf8'); } catch { /* no .env yet */ }
+  const lines = content.split('\n');
+  const idx = lines.findIndex(l => l.startsWith(`${key}=`));
+  if (idx >= 0) lines[idx] = `${key}=${value}`;
+  else lines.push(`${key}=${value}`);
+  writeFileSync(envPath, lines.join('\n'), 'utf8');
+}
+
 // ── AI provider selection prompt ────────────────────────────────────────────
 async function selectAIProvider() {
   // If pre-configured via env var, use it directly
@@ -182,14 +195,14 @@ async function selectAIProvider() {
   if (choice === 'claude' && !config.anthropicApiKey) {
     const key = await ask('  ANTHROPIC_API_KEY: ');
     const trimmed = key.trim();
-    if (trimmed) config.anthropicApiKey = trimmed;
+    if (trimmed) { config.anthropicApiKey = trimmed; saveKeyToEnv('ANTHROPIC_API_KEY', trimmed); }
     else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
   }
 
   if (choice === 'openai' && !config.openaiApiKey) {
     const key = await ask('  OPENAI_API_KEY: ');
     const trimmed = key.trim();
-    if (trimmed) config.openaiApiKey = trimmed;
+    if (trimmed) { config.openaiApiKey = trimmed; saveKeyToEnv('OPENAI_API_KEY', trimmed); }
     else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
   }
 
