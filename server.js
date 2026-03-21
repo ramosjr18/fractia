@@ -163,40 +163,34 @@ app.post('/api/audit', async (req, res) => {
 
 // ── AI provider selection prompt ────────────────────────────────────────────
 async function selectAIProvider() {
-  const hasClaude = !!config.anthropicApiKey;
-  const hasOpenAI = !!config.openaiApiKey;
-
   // If pre-configured via env var, use it directly
   if (config.aiProvider) return;
-
-  if (!hasClaude && !hasOpenAI) {
-    config.aiProvider = 'none';
-    return;
-  }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const ask = (q) => new Promise(resolve => rl.question(q, resolve));
 
   console.log('\n  ┌─────────────────────────────────────────┐');
   console.log('  │         Enriquecimiento con IA          │');
-  console.log('  └─────────────────────────────────────────┘');
+  console.log('  └─────────────────────────────────────────┘\n');
+  console.log('    [1] Claude (Anthropic)');
+  console.log('    [2] OpenAI (GPT-4o)');
+  console.log('    [3] Sin IA — solo análisis estático\n');
 
-  let choice;
-  if (hasClaude && hasOpenAI) {
-    console.log('  Se detectaron 2 proveedores disponibles:\n');
-    console.log('    [1] Claude (Anthropic)');
-    console.log('    [2] OpenAI (GPT-4o)');
-    console.log('    [3] Sin IA — solo análisis estático\n');
-    const ans = await ask('  Selecciona proveedor [1/2/3]: ');
-    if (ans.trim() === '2') choice = 'openai';
-    else if (ans.trim() === '3') choice = 'none';
-    else choice = 'claude';
-  } else if (hasClaude) {
-    const ans = await ask('  ANTHROPIC_API_KEY detectada. ¿Usar Claude para enriquecimiento? [S/n]: ');
-    choice = ans.trim().toLowerCase() === 'n' ? 'none' : 'claude';
-  } else {
-    const ans = await ask('  OPENAI_API_KEY detectada. ¿Usar OpenAI (GPT-4o) para enriquecimiento? [S/n]: ');
-    choice = ans.trim().toLowerCase() === 'n' ? 'none' : 'openai';
+  const ans = await ask('  Selecciona proveedor [1/2/3]: ');
+  const choice = ans.trim() === '2' ? 'openai' : ans.trim() === '3' ? 'none' : 'claude';
+
+  if (choice === 'claude' && !config.anthropicApiKey) {
+    const key = await ask('  ANTHROPIC_API_KEY: ');
+    const trimmed = key.trim();
+    if (trimmed) config.anthropicApiKey = trimmed;
+    else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
+  }
+
+  if (choice === 'openai' && !config.openaiApiKey) {
+    const key = await ask('  OPENAI_API_KEY: ');
+    const trimmed = key.trim();
+    if (trimmed) config.openaiApiKey = trimmed;
+    else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
   }
 
   config.aiProvider = choice;
