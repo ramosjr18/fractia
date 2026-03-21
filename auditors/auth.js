@@ -14,11 +14,26 @@ export async function audit(depth) {
   const schemasDir = structure.dirs.schemas || modelsDir;
 
   // --- Auth middleware ---
-  const authMiddlewarePath = path.join(middlewareDir, 'auth.js');
-  const authMiddleware = await readFile(authMiddlewarePath);
+  // Try common auth middleware file names
+  const authFileNames = ['auth.js', 'auth.middleware.js', 'jwt.js', 'jwt.middleware.js', 'authenticate.js'];
+  let authMiddleware = null;
+  let authMiddlewarePath = null;
+  for (const name of authFileNames) {
+    const candidate = path.join(middlewareDir, name);
+    const content = await readFile(candidate);
+    if (content) { authMiddleware = content; authMiddlewarePath = candidate; break; }
+  }
+  // Fallback: grep src for jwt.verify to find the actual auth file
+  if (!authMiddleware) {
+    const jwtMatches = await grepFiles(src, [/jwt\.verify\s*\(/], { extensions: ['.js'] });
+    if (jwtMatches.length > 0) {
+      authMiddlewarePath = jwtMatches[0].filePath;
+      authMiddleware = await readFile(authMiddlewarePath);
+    }
+  }
 
   if (authMiddleware) {
-    _codeSnippets['middleware/auth.js'] = truncate(authMiddleware, 2000);
+    _codeSnippets[path.relative(src, authMiddlewarePath)] = truncate(authMiddleware, 2000);
 
     // 1. JWT fallback secret
     if (/\|\|\s*['"`][^'"`]+['"`]/.test(authMiddleware) && authMiddleware.includes('JWT_SECRET')) {
@@ -66,18 +81,34 @@ export async function audit(depth) {
   } else {
     findings.push({
       type: 'info',
-      title: 'Auth middleware file not found',
-      description: `Could not read ${authMiddlewarePath}`,
+      title: 'No JWT auth middleware found',
+      description: 'Could not locate auth middleware (checked middleware/auth.js, auth.middleware.js, jwt.js and searched for jwt.verify across source). JWT security checks skipped.',
       code_example: null,
       cve: null,
     });
   }
 
   // --- Auth controller: bcrypt rounds + token expiry ---
-  const authControllerPath = path.join(controllersDir, 'auth.controller.js');
-  const authController = await readFile(authControllerPath);
+  // Try common auth controller file names
+  const authCtrlNames = ['auth.controller.js', 'auth.js', 'authentication.controller.js', 'login.controller.js'];
+  let authController = null;
+  let authControllerPath = null;
+  for (const name of authCtrlNames) {
+    const candidate = path.join(controllersDir, name);
+    const content = await readFile(candidate);
+    if (content) { authController = content; authControllerPath = candidate; break; }
+  }
+  // Fallback: grep src for bcrypt.hash to find the actual auth controller
+  if (!authController) {
+    const bcryptMatches = await grepFiles(src, [/bcrypt\.hash\s*\(/], { extensions: ['.js'] });
+    if (bcryptMatches.length > 0) {
+      authControllerPath = bcryptMatches[0].filePath;
+      authController = await readFile(authControllerPath);
+    }
+  }
+
   if (authController) {
-    _codeSnippets['controllers/auth.controller.js'] = truncate(authController, 2000);
+    _codeSnippets[path.relative(src, authControllerPath)] = truncate(authController, 2000);
 
     const bcryptMatch = authController.match(/bcrypt\.hash\([^,]+,\s*(\d+)\)/);
     if (bcryptMatch) {
