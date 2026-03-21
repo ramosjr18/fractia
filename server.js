@@ -1,9 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import readline from 'readline';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { enrichWithClaude } from './utils/claudeClient.js';
+import { enrichWithOpenAI } from './utils/openaiClient.js';
 import { discoverStructure } from './utils/fileScanner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,7 +24,7 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     version: '1.0.0',
     projectRoot: config.projectRoot,
-    claudeEnabled: !!config.anthropicApiKey,
+    aiProvider: config.aiProvider || 'none',
   });
 });
 
@@ -122,12 +124,14 @@ app.post('/api/audit', async (req, res) => {
       })
     );
 
-    // Phase 2: Enrich with Claude (deep/full modes only, if API key available)
-    if (depth !== 'standard' && config.anthropicApiKey) {
+    // Phase 2: Enrich with AI (deep/full modes only, if a provider is selected)
+    const aiActive = depth !== 'standard' && config.aiProvider && config.aiProvider !== 'none';
+    if (aiActive) {
       try {
-        await enrichWithClaude(auditResults, depth);
+        if (config.aiProvider === 'openai') await enrichWithOpenAI(auditResults, depth);
+        else if (config.aiProvider === 'claude') await enrichWithClaude(auditResults, depth);
       } catch (err) {
-        console.warn('[Claude] Enrichment failed:', err.message);
+        console.warn(`[${config.aiProvider}] Enrichment failed:`, err.message);
       }
     }
 
@@ -144,7 +148,8 @@ app.post('/api/audit', async (req, res) => {
         generatedAt:    new Date().toISOString(),
         depth,
         projectRoot:    config.projectRoot,
-        claudeEnriched: depth !== 'standard' && !!config.anthropicApiKey,
+        aiProvider:     config.aiProvider || 'none',
+        aiEnriched:     aiActive,
         scanDurationMs: Date.now() - startTime,
       },
     });
@@ -156,9 +161,59 @@ app.post('/api/audit', async (req, res) => {
   }
 });
 
+// ── AI provider selection prompt ────────────────────────────────────────────
+async function selectAIProvider() {
+  const hasClaude = !!config.anthropicApiKey;
+  const hasOpenAI = !!config.openaiApiKey;
+
+  // If pre-configured via env var, use it directly
+  if (config.aiProvider) return;
+
+  if (!hasClaude && !hasOpenAI) {
+    config.aiProvider = 'none';
+    return;
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q) => new Promise(resolve => rl.question(q, resolve));
+
+  console.log('\n  ┌─────────────────────────────────────────┐');
+  console.log('  │         Enriquecimiento con IA          │');
+  console.log('  └─────────────────────────────────────────┘');
+
+  let choice;
+  if (hasClaude && hasOpenAI) {
+    console.log('  Se detectaron 2 proveedores disponibles:\n');
+    console.log('    [1] Claude (Anthropic)');
+    console.log('    [2] OpenAI (GPT-4o)');
+    console.log('    [3] Sin IA — solo análisis estático\n');
+    const ans = await ask('  Selecciona proveedor [1/2/3]: ');
+    if (ans.trim() === '2') choice = 'openai';
+    else if (ans.trim() === '3') choice = 'none';
+    else choice = 'claude';
+  } else if (hasClaude) {
+    const ans = await ask('  ANTHROPIC_API_KEY detectada. ¿Usar Claude para enriquecimiento? [S/n]: ');
+    choice = ans.trim().toLowerCase() === 'n' ? 'none' : 'claude';
+  } else {
+    const ans = await ask('  OPENAI_API_KEY detectada. ¿Usar OpenAI (GPT-4o) para enriquecimiento? [S/n]: ');
+    choice = ans.trim().toLowerCase() === 'n' ? 'none' : 'openai';
+  }
+
+  config.aiProvider = choice;
+  rl.close();
+}
+
 // ── Start ───────────────────────────────────────────────────────────────────
+await selectAIProvider();
+
 app.listen(config.port, async () => {
   const structure = await discoverStructure();
+  const providerLabel = {
+    claude: '✓ Claude (Anthropic) — deep/full modes',
+    openai: '✓ OpenAI (GPT-4o) — deep/full modes',
+    none:   '✗ Sin IA (solo análisis estático)',
+  }[config.aiProvider] || '✗ Sin IA';
+
   console.log(`\n  ███████╗██████╗  █████╗  ██████╗████████╗██╗ █████╗`);
   console.log(`  ██╔════╝██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔══██╗`);
   console.log(`  █████╗  ██████╔╝███████║██║        ██║   ██║███████║`);
@@ -170,6 +225,6 @@ app.listen(config.port, async () => {
   console.log(`  UI:           http://localhost:${config.port}`);
   console.log(`  Project:      ${config.projectRoot}`);
   console.log(`  Framework:    ${structure.framework} (src: ${structure.srcDir})`);
-  console.log(`  Claude AI:    ${config.anthropicApiKey ? '✓ enabled (deep/full modes)' : '✗ not configured (set ANTHROPIC_API_KEY)'}`);
+  console.log(`  IA:           ${providerLabel}`);
   console.log(`  ─────────────────────────────────────────\n`);
 });
