@@ -54,10 +54,28 @@ export async function discoverStructure(root = config.projectRoot) {
     files: {}
   };
 
-  // 1. Walk up for common root files
-  result.files.packageJson = await findUp(root, 'package.json');
-  result.files.env = await findUp(root, '.env');
-  result.files.gitignore = await findUp(root, '.gitignore');
+  // 0. Determine appRoot: handles monorepos where backend lives in a subdirectory
+  //    e.g. root = /project, actual backend = /project/backend
+  const BACKEND_SUBDIRS = ['backend', 'server', 'api', 'service'];
+  let appRoot = root;
+
+  const directSrc = await findDir(root, ['src', 'app', 'lib', 'source']);
+  if (!directSrc) {
+    for (const sub of BACKEND_SUBDIRS) {
+      const subPath = path.join(root, sub);
+      const hasPkg = await fileExists(path.join(subPath, 'package.json'));
+      const hasSrc = await findDir(subPath, ['src', 'app', 'lib', 'source']);
+      if (hasPkg || hasSrc) {
+        appRoot = subPath;
+        break;
+      }
+    }
+  }
+
+  // 1. Walk up for common root files (start from appRoot to catch nested .env/package.json)
+  result.files.packageJson = await findUp(appRoot, 'package.json');
+  result.files.env = await findUp(appRoot, '.env') || await findUp(root, '.env');
+  result.files.gitignore = await findUp(appRoot, '.gitignore') || await findUp(root, '.gitignore');
 
   // 2. Framework detection
   if (result.files.packageJson) {
@@ -75,10 +93,15 @@ export async function discoverStructure(root = config.projectRoot) {
     }
   }
 
-  // 3. Find srcDir
-  const srcCandidate = await findDir(root, ['src', 'app', 'lib', 'source', '.']);
-  if (srcCandidate) {
+  // 3. Find srcDir within appRoot
+  const srcCandidate = directSrc || await findDir(appRoot, ['src', 'app', 'lib', 'source', '.']);
+  if (srcCandidate && appRoot === root) {
     result.srcDir = path.join(root, srcCandidate);
+  } else if (appRoot !== root) {
+    const nestedSrc = await findDir(appRoot, ['src', 'app', 'lib', 'source']);
+    result.srcDir = nestedSrc ? path.join(appRoot, nestedSrc) : appRoot;
+  } else {
+    result.srcDir = root;
   }
 
   // 4. Find entry file
@@ -86,8 +109,8 @@ export async function discoverStructure(root = config.projectRoot) {
   if (entryCandidate) {
     result.entryFile = path.join(result.srcDir, entryCandidate);
   } else {
-    const rootEntry = await findFile(root, ['server.js', 'app.js', 'index.js', 'main.js']);
-    if (rootEntry) result.entryFile = path.join(root, rootEntry);
+    const appRootEntry = await findFile(appRoot, ['server.js', 'app.js', 'index.js', 'main.js']);
+    if (appRootEntry) result.entryFile = path.join(appRoot, appRootEntry);
   }
 
   // 5. Subdirectories
