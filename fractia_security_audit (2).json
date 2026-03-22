@@ -1,0 +1,301 @@
+{
+  "summary": "Risk score 42/100 across 10 modules. HIGH severity in: Secrets & Leaks. 3 modules passed cleanly.",
+  "risk_score": 42,
+  "modules": [
+    {
+      "id": "auth",
+      "name": "Autenticación & JWT",
+      "severity": "medium",
+      "score": 86,
+      "findings": [
+        {
+          "type": "warning",
+          "title": "No refresh token implementation detected",
+          "description": "Without refresh tokens, users must re-authenticate when access tokens expire, or access tokens are set with long expiry (increasing exposure window). Check auth controller for token duration.",
+          "code_example": null,
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": "req.user accessed without prior existence check",
+          "description": "Found 86 location(s) where req.user.property is read without verifying req.user is defined first: ai.controller.js:36, ats.controller.js:9, ats.controller.js:16. If auth middleware is skipped or misconfigured, this causes an unhandled TypeError.",
+          "code_example": "req.user.id  // Should check: if (!req.user) return res.status(401).json(...)",
+          "cve": null
+        },
+        {
+          "type": "vulnerability",
+          "title": "Lack of Refresh Token Implementation",
+          "description": "The absence of refresh token implementation means that once a JWT expires, the user must reauthenticate, potentially leading to user inconvenience and inefficiencies in token management.",
+          "code_example": null,
+          "cve": null,
+          "_aiGenerated": true
+        },
+        {
+          "type": "warning",
+          "title": "User Object May Contain Sensitive Data",
+          "description": "In controllers/auth.controller.js, the sanitizeUser function is used to remove passwords, but does not remove other potential sensitive fields like email or phone number.",
+          "code_example": "const sanitizeUser = (user) => { const { password, ...userWithoutPassword } = user; return userWithoutPassword; }",
+          "cve": null,
+          "_aiGenerated": true
+        }
+      ],
+      "recommendations": [
+        "Remove the JWT_SECRET fallback: if it's unset, throw at startup. Add: if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required').",
+        "Add algorithms option: jwt.verify(token, secret, { algorithms: ['HS256'] }).",
+        "Increase password minimum to 12 characters in all schemas.",
+        "Implement JWT token revocation using a Redis-backed jti denylist for critical operations (logout, password change).",
+        "Use short-lived access tokens (15m–1h) paired with refresh tokens instead of long-lived tokens.",
+        "Add account lockout after N failed login attempts using lockedUntil field."
+      ]
+    },
+    {
+      "id": "api",
+      "name": "API Endpoints",
+      "severity": "low",
+      "score": 92,
+      "findings": [
+        {
+          "type": "warning",
+          "title": "1 route(s) detected without explicit auth middleware",
+          "description": "Routes without auth in their declaration: POST auth/extension/auth-totp. Verify each is intentionally public.",
+          "code_example": null,
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Add router.use(authenticate) at the top of every protected route file instead of per-route.",
+        "Gate /admin and /internal routes with both authenticate and a role check (e.g., requireOrgRole('ADMIN')).",
+        "Remove or disable /debug, /test, /dev routes in production. Use NODE_ENV checks or separate router mounts.",
+        "Add an integration test that verifies every non-public route returns 401 when called without a token."
+      ]
+    },
+    {
+      "id": "ddos",
+      "name": "DDoS & Rate Limiting",
+      "severity": "low",
+      "score": 90,
+      "findings": [
+        {
+          "type": "warning",
+          "title": "No server timeout configuration detected (Slowloris risk)",
+          "description": "No server.timeout, keepAliveTimeout, or headersTimeout found. Without timeouts, a slow client (Slowloris attack) can hold connections open indefinitely, exhausting the server's connection pool.",
+          "code_example": "server.keepAliveTimeout = 65000;\nserver.headersTimeout = 66000;",
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Add userId-based keyGenerator to authenticated route limiters to prevent IP-rotation bypass.",
+        "Consider reducing the general API limiter to 30-60 req/15min for unauthenticated paths.",
+        "Add standardHeaders: true, legacyHeaders: false to all rate limit configs.",
+        "Use a distributed rate limiter (express-rate-limit + Redis store) across multiple server instances.",
+        "Set server.keepAliveTimeout = 65000 and server.headersTimeout = 66000 to mitigate Slowloris attacks.",
+        "Always set a request body size limit (express.json({ limit: '1mb' })) before mounting compression."
+      ]
+    },
+    {
+      "id": "sql",
+      "name": "Inyecciones SQL/NoSQL",
+      "severity": "low",
+      "score": 90,
+      "findings": [
+        {
+          "type": "info",
+          "title": "6 raw SQL queries found (tagged templates — safe)",
+          "description": "Found $queryRaw/$executeRaw in: interview.controller.js, atsDomainClassifier.service.js, events-discovery.worker.js. These use tagged template syntax which auto-parameterizes values.",
+          "code_example": "await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId + userId}))`;",
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": "Prisma queries may be missing tenantId filter",
+          "description": "Found findMany/findFirst without visible tenantId in context: src/controllers/auth.controller.js:641, src/controllers/auth.controller.js:830, src/controllers/automation.controller.js:87. In a multi-tenant app, every query must be scoped to the current tenant.",
+          "code_example": "const latestOtp = await prisma.emailVerificationOtp.findFirst({",
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Never use $queryRawUnsafe or $executeRawUnsafe. Use Prisma's tagged template $queryRaw`...` which auto-parameterizes.",
+        "Validate and sanitize user input before using it in any database query — especially for MongoDB operator keys ($where, $gt, etc.).",
+        "Add a lint rule or test to verify every findMany/findFirst/findUnique includes appropriate scoping (tenantId, userId).",
+        "Avoid passing unsanitized request values directly into MongoDB queries. Use allowlist validation for query operators."
+      ]
+    },
+    {
+      "id": "xss",
+      "name": "XSS & CSRF",
+      "severity": "ok",
+      "score": 100,
+      "findings": [
+        {
+          "type": "info",
+          "title": "No CSRF middleware (acceptable for JWT Bearer auth)",
+          "description": "No CSRF protection found. If authentication is purely via Authorization: Bearer headers (not cookies), CSRF is not a concern.",
+          "code_example": null,
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Set CORS_ORIGIN to an explicit allowlist; never fallback to '*'.",
+        "Ensure all API endpoints return Content-Type: application/json — this prevents reflection XSS even if input is echoed.",
+        "Use express-validator's escape() on any user input that might be rendered in HTML.",
+        "Never pass req.body/query/params directly to template engines (res.render). Always extract and validate specific fields.",
+        "Replace eval() and new Function() with safe alternatives. Use JSON.parse() for data, not eval().",
+        "If authentication ever moves to cookies, add csurf or double-submit cookie CSRF protection."
+      ]
+    },
+    {
+      "id": "secrets",
+      "name": "Secrets & Leaks",
+      "severity": "high",
+      "score": 80,
+      "findings": [
+        {
+          "type": "vulnerability",
+          "title": "NODE_ENV has a weak/development value in .env.local",
+          "description": "NODE_ENV=[REDACTED] — the current value matches known weak/dev patterns in .env.local. If used in production or staging, this is a critical exposure.",
+          "code_example": "NODE_ENV=[REDACTED]",
+          "cve": null
+        },
+        {
+          "type": "info",
+          "title": ".env file not found",
+          "description": "No .env file found under project root. Ensure environment variables are properly managed in your deployment.",
+          "code_example": null,
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Never use fallback hardcoded secrets (|| 'default-secret'). Fail startup if required env vars are missing.",
+        "Use a secrets manager (AWS Secrets Manager, Vault, Doppler) in production.",
+        "Rotate JWT_SECRET and all API keys if they have ever been set to weak/dev values.",
+        "Add a startup validation that throws if JWT_SECRET is shorter than 32 characters or matches known weak patterns."
+      ]
+    },
+    {
+      "id": "headers",
+      "name": "Headers & CORS",
+      "severity": "medium",
+      "score": 80,
+      "findings": [
+        {
+          "type": "vulnerability",
+          "title": "Cookie set without secure flag(s)",
+          "description": "Found res.cookie() at auth.controller.js:20 missing secure. Without httpOnly, JS can read the cookie (XSS risk). Without secure, cookie is sent over HTTP (MITM risk).",
+          "code_example": "res.cookie('name', value, { httpOnly: true, secure: true, sameSite: 'strict' })",
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Set CORS_ORIGIN to an explicit allowlist in production. Never use * in production.",
+        "Change crossOriginResourcePolicy back to \"same-site\" unless you have a specific cross-origin embedding requirement.",
+        "Add app.disable('x-powered-by') or use Helmet's hidePoweredBy to remove the Express fingerprint.",
+        "Configure Permissions-Policy to restrict unused browser APIs.",
+        "Set Referrer-Policy to strict-origin-when-cross-origin to prevent token leakage via Referer.",
+        "Always set httpOnly: true and secure: true on all authentication cookies."
+      ]
+    },
+    {
+      "id": "deps",
+      "name": "Dependencias",
+      "severity": "ok",
+      "score": 100,
+      "findings": [],
+      "recommendations": [
+        "Run `npm audit fix` to resolve auto-fixable vulnerabilities.",
+        "Set up `npm audit` as a CI/CD gate — fail the build on critical/high severity issues.",
+        "Use Dependabot or Renovate to automate dependency update PRs.",
+        "Pin exact dependency versions in production (use package-lock.json)."
+      ]
+    },
+    {
+      "id": "infra",
+      "name": "Infraestructura",
+      "severity": "medium",
+      "score": 76,
+      "findings": [
+        {
+          "type": "info",
+          "title": "trust proxy set to 1",
+          "description": "app.set('trust proxy', 1) trusts the first proxy in the chain. Correct for single reverse-proxy setups. If over-trusted, attackers can spoof X-Forwarded-For to bypass IP-based rate limiting.",
+          "code_example": "app.set('trust proxy', 1)",
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": "JSON body parser limit is 10mb",
+          "description": "A 10mb request body limit allows large payloads that can exhaust server memory. For most API endpoints, 1MB is sufficient.",
+          "code_example": "express.json({ limit: '10mb' })  // Consider '1mb' for API routes",
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": "74 console.log() calls found in controllers/services",
+          "description": "Excessive console.log usage in production code leaks internal details to server logs (including potentially sensitive request data), and cannot be disabled without code changes. Use a structured logger with log levels.",
+          "code_example": "// Replace console.log with a structured logger:\nlogger.debug('Processing request', { userId, action })",
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": ".env.example may contain real secrets instead of placeholder values",
+          "description": "Found 10 value(s) in .env.example that appear to be real secrets (length > 20 chars, no placeholder language). Example files committed to VCS should only contain placeholder values like YOUR_KEY_HERE.",
+          "code_example": null,
+          "cve": null
+        },
+        {
+          "type": "warning",
+          "title": "Excessive Console Logging",
+          "description": "Excessive logging with 74 console.log calls in controllers/services may expose sensitive data to logs, especially if they're exposed to production environments.",
+          "code_example": "console.log('User logged in:', user)",
+          "cve": null,
+          "_aiGenerated": true
+        },
+        {
+          "type": "vulnerability",
+          "title": "Large JSON Body Parser Limit",
+          "description": "The JSON body parser limit is set to 10MB, which may expose the application to denial-of-service (DoS) attacks through large request bodies.",
+          "code_example": "app.use(express.json({ limit: '10mb' }));",
+          "cve": null,
+          "_aiGenerated": true
+        }
+      ],
+      "recommendations": [
+        "Set NODE_ENV=production in all deployed environments. Use separate .env files per environment.",
+        "Add startup validation that throws if required env vars (JWT_SECRET, DATABASE_URL) are missing.",
+        "Reduce JSON body limit to '1mb' for API routes.",
+        "Ensure error handler returns stack traces only when NODE_ENV !== 'production'.",
+        "Remove --inspect and --debug-brk flags from all production npm scripts.",
+        "Replace console.log in controllers/services with a structured logger (winston, pino).",
+        "Ensure .env.example contains only placeholder values, never real keys."
+      ]
+    },
+    {
+      "id": "bots",
+      "name": "Bots & Scraping",
+      "severity": "ok",
+      "score": 100,
+      "findings": [
+        {
+          "type": "info",
+          "title": "No bot detection library detected",
+          "description": "No bot detection library (isbot, botd, @fingerprintjs/botd) found. For endpoints serving public content or accepting registrations, lightweight bot scoring adds protection beyond rate limits.",
+          "code_example": null,
+          "cve": null
+        }
+      ],
+      "recommendations": [
+        "Add Cloudflare Turnstile (invisible CAPTCHA) to /register and /forgot-password endpoints.",
+        "Log User-Agent for all auth events to aid bot pattern analysis.",
+        "Add rate limiting to all registration, login, forgot-password, and reset-password endpoints.",
+        "Use login velocity tracking to lock accounts after N failures per hour, independent of per-IP rate limits."
+      ]
+    }
+  ],
+  "meta": {
+    "generatedAt": "2026-03-21T12:39:40.455Z",
+    "depth": "full",
+    "projectRoot": "/path/to/project",
+    "aiProvider": "openai",
+    "aiEnriched": true,
+    "scanDurationMs": 5852
+  }
+}

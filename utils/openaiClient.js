@@ -53,15 +53,21 @@ ${confirmedFindings}
 ## Actual source code of critical files:
 ${snippetParts.join('\n')}
 
+## Rules (strictly enforced):
+- ONLY report findings you can directly cite from the code snippets above — quote the specific line in your description.
+- Do NOT paraphrase, restate, or reframe findings already listed in "Already confirmed by static analysis".
+- Generic security advice (e.g. "add logging", "use HTTPS") is not a finding — skip it.
+- If you cannot find additional issues grounded in the actual code above, return an empty array [].
+
 ## Your task:
 ${isFullPentest
-  ? `1. Identify additional vulnerabilities NOT yet listed above that are specific to this code.
-2. Build concrete ATTACK CHAINS that combine multiple confirmed findings (e.g. "JWT fallback → forge any user token → no cross-tenant check → read all tenant data").
-3. For each attack chain, describe the exact steps an attacker would take.
-4. Provide prioritized remediation with specific code changes.`
-  : `1. Identify additional vulnerabilities NOT yet listed above that are specific to this code.
-2. For each confirmed CRITICAL/HIGH finding, explain the realistic exploit scenario.
-3. Provide specific, actionable remediation with code examples.`
+  ? `1. Identify additional vulnerabilities NOT yet listed above, anchored to specific lines from the code snippets.
+2. Build concrete ATTACK CHAINS combining confirmed findings. Format: "Step 1: [actor does X via line Y] → Step 2: [...] → Impact: [...]".
+3. For each chain, name the exact HTTP request or payload an attacker would send.
+4. Provide remediation with the specific code fix (before/after).`
+  : `1. Identify additional vulnerabilities NOT yet listed above, anchored to specific lines from the code snippets.
+2. For each CRITICAL/HIGH finding, show the exact exploit: HTTP method, endpoint, payload, and expected response.
+3. Provide the specific code fix (before/after snippet).`
 }
 
 Return a JSON array of additional findings to append. Each element:
@@ -70,7 +76,7 @@ Return a JSON array of additional findings to append. Each element:
   "finding": {
     "type": "vulnerability|warning|info",
     "title": "Short title",
-    "description": "Technical description referencing the specific code above",
+    "description": "Technical description quoting the specific vulnerable line from the code above",
     "code_example": "Vulnerable code snippet or null",
     "cve": "CVE-XXXX-XXXX or null"
   }

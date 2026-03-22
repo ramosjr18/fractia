@@ -100,6 +100,8 @@ export async function audit(depth) {
 
       for (const { key: targetKey, weakValues, severity } of weakSecrets) {
         if (key !== targetKey) continue;
+        // NODE_ENV=development is expected in local dev files — only flag in prod/staging
+        if (targetKey === 'NODE_ENV' && (envFile === '.env' || envFile === '.env.local')) continue;
         const isWeak = weakValues.some(w => val.toLowerCase().includes(w.toLowerCase()));
         if (isWeak) {
           findings.push({
