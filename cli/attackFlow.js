@@ -130,6 +130,71 @@ function stuffingHooks() {
   };
 }
 
+// ── Live output: form-flood ───────────────────────────────────────────────────
+function formFloodHooks(mode) {
+  return {
+    onPhase(phase, msg) {
+      process.stdout.write(`\r\x1b[2K  ${colors.dim(phase)}  ${chalk.hex('#00b4d8')(msg)}`);
+    },
+    onFormFound({ formsFound, form, actionUrl, csrfField }) {
+      process.stdout.write('\r\x1b[2K');
+      console.log(`  ${chalk.hex('#00f5a0')('✓')} Formulario encontrado  ${colors.dim(`action: ${actionUrl}`)}`);
+      if (csrfField) console.log(`  ${colors.dim('  csrf token:')} ${chalk.hex('#a78bfa')(csrfField)}`);
+      const fieldNames = form.filter(f => !Array.isArray(f) && f.name).map(f => f.name).join(', ');
+      console.log(`  ${colors.dim('  campos:')} ${chalk.hex('#c8d6f0')(fieldNames)}`);
+      console.log('');
+    },
+    onStart({ mode, requests, target }) {
+      const modeColors = { flood: '#ff9f1c', 'user-enum': '#00b4d8', stuffing: '#ff2d55', spam: '#a78bfa', inject: '#ff9f1c' };
+      const c = chalk.hex(modeColors[mode] || '#ff9f1c');
+      console.log(`  ${c('▸')} Modo ${c.bold(mode.toUpperCase())} → ${chalk.hex('#00b4d8')(target)}`);
+      if (requests) console.log(`  ${colors.dim(`${requests} envíos`)}`);
+      console.log('');
+      if (mode === 'inject') {
+        console.log(`  ${colors.dim('tipo   campo       payload                              status   reflect')}`);
+        console.log(`  ${divider(68)}`);
+      } else if (mode === 'user-enum') {
+        console.log(`  ${colors.dim('email                                    status   ms      señal')}`);
+        console.log(`  ${divider(68)}`);
+      } else {
+        console.log(`  ${colors.dim('enviados  bloqueados  ok  errores  progreso')}`);
+        console.log(`  ${divider(52)}`);
+      }
+    },
+    onBatch({ done, total, stats }) {
+      const pct  = Math.round((done / total) * 100);
+      const bar  = barStr(pct, 16);
+      const blk  = stats.blocked > 0
+        ? chalk.hex('#ff9f1c').bold(String(stats.blocked).padEnd(10))
+        : colors.dim(String(stats.blocked).padEnd(10));
+      process.stdout.write(
+        `\r\x1b[2K  ${chalk.hex('#c8d6f0')(String(done).padEnd(9))}` +
+        `${blk}${chalk.hex('#00f5a0')(String(stats.ok).padEnd(4))} ` +
+        `${chalk.hex('#ff2d55')(String(stats.errors).padEnd(9))}${colors.dim(bar + ' ' + pct + '%')}`
+      );
+    },
+    onEnumResult({ email, status, ms, body }) {
+      const statusC = status === 200 ? chalk.hex('#00f5a0') : status === 429 ? chalk.hex('#ff9f1c') : colors.dim;
+      const snippet = (body || '').replace(/\s+/g, ' ').trim().slice(0, 35);
+      console.log(
+        `  ${chalk.hex('#c8d6f0')(email.padEnd(40))} ` +
+        `${statusC(String(status).padEnd(8))} ${colors.dim(String(ms) + 'ms').padEnd(8)}  ` +
+        `${colors.dim(snippet)}`
+      );
+    },
+    onInjectResult({ type, field, payload, status, reflected, sqlError, timingHit, bodySnippet }) {
+      const hit = reflected || sqlError || timingHit;
+      const icon = hit ? chalk.hex('#ff2d55').bold('✖ HIT') : chalk.hex('#00f5a0')('✓ ok ');
+      const typeC = type === 'XSS' ? chalk.hex('#ff9f1c') : chalk.hex('#ff2d55');
+      console.log(
+        `  ${icon}  ${typeC(type.padEnd(5))} ${chalk.hex('#c8d6f0')(field.padEnd(11))} ` +
+        `${colors.dim(payload.slice(0, 36).padEnd(38))} ${colors.dim(String(status))}` +
+        (hit ? `  ${chalk.hex('#ff2d55').bold('← VULNERABLE')}` : '')
+      );
+    },
+  };
+}
+
 // ── Verdict renderer ──────────────────────────────────────────────────────────
 function printVerdict(result) {
   const SEV = {
@@ -156,6 +221,31 @@ function printVerdict(result) {
     console.log(`  ${colors.dim('Rechazadas')}             ${chalk.hex('#ff2d55')(s.refused)}`);
     console.log(`  ${colors.dim('Servidor sin respuesta')} ${s.serverUnresponsive ? chalk.hex('#ff2d55')('Sí') : chalk.hex('#00f5a0')('No')}`);
     console.log(`  ${colors.dim('Servidor recuperado')}    ${s.serverRecovered ? chalk.hex('#00f5a0')('Sí') : chalk.hex('#ff2d55')('No')}`);
+  } else if (result.profile === 'form-flood') {
+    const s = result.stats;
+    console.log(`  ${colors.dim('Modo')}                   ${chalk.hex('#ff9f1c')(result.mode)}`);
+    console.log(`  ${colors.dim('Form action')}            ${chalk.hex('#00b4d8')(result.formAction || '—')}`);
+    console.log(`  ${colors.dim('CSRF protegido')}         ${result.csrfProtected ? chalk.hex('#00f5a0')('Sí') : chalk.hex('#ff2d55')('No')}`);
+    if (result.mode === 'inject') {
+      console.log(`  ${colors.dim('Payloads probados')}      ${chalk.hex('#c8d6f0')(s.payloadsTested)}`);
+      console.log(`  ${colors.dim('Campos probados')}        ${chalk.hex('#c8d6f0')(s.fieldsProbed)}`);
+      console.log(`  ${colors.dim('Vulnerabilidades')}       ${s.vulnerabilities > 0 ? chalk.hex('#ff2d55').bold(s.vulnerabilities) : chalk.hex('#00f5a0')('0')}`);
+      if (result.findings?.length) {
+        console.log('');
+        for (const f of result.findings) {
+          const tag = f.type === 'XSS' ? chalk.hex('#ff9f1c').bold('XSS') : chalk.hex('#ff2d55').bold('SQLi');
+          console.log(`  ${tag}  campo ${chalk.hex('#c8d6f0')(f.field)}  ${colors.dim(`"${f.payload.slice(0, 40)}"`)}`);
+        }
+      }
+    } else if (result.mode === 'user-enum') {
+      console.log(`  ${colors.dim('Emails testeados')}       ${chalk.hex('#c8d6f0')(s.tested)}`);
+      console.log(`  ${colors.dim('Leak detectado')}         ${s.bodyLeaks ? chalk.hex('#ff2d55').bold('Sí') : chalk.hex('#00f5a0')('No')}`);
+    } else {
+      console.log(`  ${colors.dim('Envíos realizados')}      ${chalk.hex('#c8d6f0')(s.sent)}`);
+      console.log(`  ${colors.dim('Bloqueados')}             ${chalk.hex('#ff9f1c')(s.blocked)}  ${colors.dim(`(${s.blockedRatio}%)`)}`);
+      const statuses = Object.entries(s.statuses || {}).sort((a, b) => b[1] - a[1]);
+      if (statuses.length) console.log(`  ${colors.dim('Distribución status')}    ${statuses.map(([k,v]) => `${colors.dim(k+':')}${chalk.hex('#c8d6f0')(v)}`).join('  ')}`);
+    }
   } else if (result.profile === 'bots-stuffing') {
     console.log(`  ${colors.dim('Requests enviados')}      ${chalk.hex('#c8d6f0')(s.sent)}`);
     console.log(`  ${colors.dim('Bloqueados (429)')}       ${chalk.hex('#ff9f1c')(s.blocked)}  ${colors.dim(`(${s.blockedRatio}%)`)}`);
@@ -245,6 +335,28 @@ export async function runAttackInteractive() {
     if (bodyTmpl) opts.bodyTemplate = bodyTmpl;
   }
 
+  // form-flood specific options
+  if (profile.id === 'form-flood') {
+    console.log('');
+    console.log(`  ${colors.dim('modos disponibles')}`);
+    const MODES = [
+      { id: 'flood',     desc: 'Envío masivo — valida rate limiting en el formulario' },
+      { id: 'user-enum', desc: 'Detecta si el servidor revela si un email existe' },
+      { id: 'stuffing',  desc: 'Credential stuffing con CSRF + cookies de sesión' },
+      { id: 'spam',      desc: 'Flood de contenido (contacto, comentarios, newsletter)' },
+      { id: 'inject',    desc: 'Payloads XSS + SQLi en cada campo del formulario' },
+    ];
+    MODES.forEach((m, i) => {
+      console.log(t.option(`[${i + 1}]`, `${m.id.padEnd(10)} ${colors.dim(m.desc)}`));
+    });
+    console.log('');
+    const mAns = await ask(colors.accent2('  ▸ ') + colors.text('Modo [1-5]: '));
+    opts.mode = MODES[(parseInt(mAns, 10) - 1)]?.id || 'flood';
+
+    const fiAns = await ask(colors.accent2('  ▸ ') + colors.text('Índice del formulario si hay varios [0]: '));
+    if (fiAns) opts.formIndex = parseInt(fiAns, 10);
+  }
+
   // Optional overrides
   const reqAns = await ask(colors.accent2('  ▸ ') + colors.text('Requests [200]: '));
   if (reqAns) opts.requests = parseInt(reqAns, 10);
@@ -266,7 +378,11 @@ export async function runAttackInteractive() {
 
 // ── Shared execution ──────────────────────────────────────────────────────────
 async function executeAttack({ target, profile, opts }) {
-  const hooks = profile === 'slowloris' ? slowlorisHooks() : stuffingHooks();
+  const hooks = profile === 'slowloris'
+    ? slowlorisHooks()
+    : profile === 'form-flood'
+      ? formFloodHooks(opts.mode || 'flood')
+      : stuffingHooks();
 
   // Graceful Ctrl+C
   let result;

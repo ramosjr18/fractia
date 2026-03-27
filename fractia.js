@@ -130,7 +130,7 @@ async function mainMenu() {
   console.log('');
   console.log(t.option('[1]', `Code Audit          ${colors.dim(`${ALL_MODULES.length} módulos disponibles`)}`));
   console.log(t.option('[2]', `Infra Audit         ${ironbase ? colors.dim('IronBase listo') : chalk.hex('#ff2d55')('IronBase no disponible')}`));
-  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('slowloris · bots-stuffing')}`));
+  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('slowloris · bots-stuffing · form-flood')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -405,8 +405,10 @@ async function main() {
     const opts = {
       loginPath:    getFlag('--login-path'),
       bodyTemplate: getFlag('--body'),
-      requests:     getFlag('--requests')  ? parseInt(getFlag('--requests'), 10)  : undefined,
-      duration:     getFlag('--duration')  ? parseInt(getFlag('--duration'), 10)  : undefined,
+      mode:         getFlag('--mode'),
+      formIndex:    getFlag('--form-index') ? parseInt(getFlag('--form-index'), 10) : undefined,
+      requests:     getFlag('--requests')   ? parseInt(getFlag('--requests'), 10)   : undefined,
+      duration:     getFlag('--duration')   ? parseInt(getFlag('--duration'), 10)   : undefined,
       connections:  getFlag('--connections') ? parseInt(getFlag('--connections'), 10) : undefined,
     };
     await runAttackCLI({ target, profile, opts });

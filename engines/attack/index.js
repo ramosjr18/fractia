@@ -12,22 +12,31 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PROFILES = {
   'slowloris':     () => import('./profiles/slowloris.js'),
   'bots-stuffing': () => import('./profiles/botsStuffing.js'),
+  'form-flood':    () => import('./profiles/formFlood.js'),
 };
 
 export const PROFILE_LIST = [
   {
-    id:          'slowloris',
-    name:        'Slowloris',
-    description: 'Connection exhaustion — agota el pool de conexiones del servidor',
-    risk:        'medium',
+    id:           'slowloris',
+    name:         'Slowloris',
+    description:  'Connection exhaustion — agota el pool de conexiones del servidor',
+    risk:         'medium',
     requiredOpts: [],
   },
   {
-    id:          'bots-stuffing',
-    name:        'Credential Stuffing',
-    description: 'Ráfaga de logins falsos para validar rate limiting y lockout',
-    risk:        'medium',
+    id:           'bots-stuffing',
+    name:         'Credential Stuffing',
+    description:  'Ráfaga de logins falsos (JSON API) para validar rate limiting y lockout',
+    risk:         'medium',
     requiredOpts: ['loginPath'],
+  },
+  {
+    id:           'form-flood',
+    name:         'Form Flood',
+    description:  'Ataca formularios HTML: flood · user-enum · stuffing · spam · inject',
+    risk:         'medium',
+    requiredOpts: [],
+    modes:        ['flood', 'user-enum', 'stuffing', 'spam', 'inject'],
   },
 ];
 
