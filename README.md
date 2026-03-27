@@ -1,6 +1,6 @@
 # Fractia — Full-Stack Security Platform
 
-Fractia es una plataforma de seguridad integral que combina dos engines independientes: **auditoría de código** para proyectos Node.js/Express, e **hardening de infraestructura Linux** vía IronBase Engine. Cubre la seguridad desde el sistema operativo hasta el código desplegado en un único dashboard.
+Fractia es una plataforma de seguridad integral que combina tres engines de análisis: **auditoría de código** (SAST), **pentesting dinámico** (DAST) y **hardening de infraestructura Linux** vía IronBase Engine. Cubre la seguridad desde el sistema operativo hasta el código desplegado en un único dashboard.
 
 ---
 
@@ -8,20 +8,21 @@ Fractia es una plataforma de seguridad integral que combina dos engines independ
 
 | Engine | Descripción | Módulos | Tecnología |
 |--------|-------------|---------|------------|
-| **Code Engine** | Análisis estático + IA de código Node.js/Express | 12 | JavaScript (ES Modules) |
+| **Code Engine (SAST)** | Análisis estático + IA (Node.js & Python) | 13 | JavaScript (ES Modules) |
+| **Attack Engine (DAST)** | Pruebas dinámicas de denegación de servicio | 2 | Node.js (CLI-only) |
 | **Infra Engine (IronBase)** | Hardening y auditoría de servidores Linux | 9 | Bash |
 
 ---
 
 ## Características Principales
 
-- **21 módulos de seguridad** en total: 12 de código y 9 de infraestructura.
-- **Dashboard con dos modos**: Code Audit e Infra Audit, con interfaz diferenciada por engine.
-- **Análisis híbrido en el Code Engine**: análisis estático rápido + enriquecimiento profundo con IA (Claude o GPT-4o).
-- **IronBase Engine integrado**: ejecuta módulos Bash para auditar SSH, firewall, filesystem, usuarios, red, servicios y vulnerabilidades del sistema.
-- **Privacidad**: los secretos detectados se ocultan antes de ser enviados a la IA. El análisis corre en local.
-- **Tolerancia a fallos**: si un módulo falla, el resto continúa y el error se reporta de forma aislada.
-- **Exportación de reportes**: cada auditoría genera un JSON descargable con todos los hallazgos.
+- **Multi-Lenguaje**: Soporte nativo para proyectos **Node.js (Express, Next.js, NestJS)** y **Python (FastAPI, Flask, Django)**.
+- **24 módulos de seguridad** en total: 13 de código, 9 de infraestructura y 2 de ataque dinámico.
+- **Dashboard Dual**: Code Audit e Infra Audit con interfaz diferenciada y visualización de riesgos en tiempo real.
+- **Análisis Híbrido**: Análisis estático rápido enriquecido con **IA profunda** (Claude 3.5 Sonnet o GPT-4o) para construir vectores de ataque.
+- **IronBase Engine**: Ejecuta módulos Bash de bajo nivel para auditar SSH, Firewall, Filesystem, y vulnerabilidades de kernel.
+- **DAST Integrado**: CLI para ejecutar ataques de Slowloris y Credential Stuffing contra endpoints activos.
+- **Tolerancia a fallos**: Ejecución modular aislada; si un auditor falla, el reporte general continúa.
 
 ---
 
@@ -29,36 +30,29 @@ Fractia es una plataforma de seguridad integral que combina dos engines independ
 
 - Node.js 18+
 - Bash (para IronBase — nativo en Linux/macOS)
-- Un proyecto Node.js/Express destino para la auditoría de código
-- Para auditoría de infraestructura: ejecutar Fractia en el servidor objetivo (con permisos root para mejores resultados)
+- Para auditoría de infraestructura: Ejecutar con permisos `root` para acceso a `/etc/shadow`, `ufw`, etc.
 
 ---
 
 ## Instalación y Configuración
 
 ```bash
-# 1. Clonar o navegar al directorio
+# 1. Clonar e instalar
 cd fractia
-
-# 2. Instalar dependencias Node.js
 npm install
 
-# 3. Configurar variables de entorno
+# 2. Configurar entorno
 cp .env.example .env
 ```
 
 Editar `.env`:
 
 ```env
-# Puerto del dashboard
 PORT=7777
+PROJECT_ROOT=/ruta/al/proyecto/a/auditar
 
-# Ruta absoluta al proyecto Node.js a auditar (Code Engine)
-PROJECT_ROOT=/ruta/absoluta/al/proyecto/backend
-
-# (Opcional) IA para modos Deep Audit y Full Pentest
+# IA para modos Deep/Full
 ANTHROPIC_API_KEY=sk-ant-...
-# o
 OPENAI_API_KEY=sk-...
 ```
 
@@ -66,62 +60,42 @@ OPENAI_API_KEY=sk-...
 
 ## Uso
 
+### Dashboard Web
+```bash
+npm run serve
+# Abre http://localhost:7777
+```
+
+### CLI Interactiva
 ```bash
 npm start
-# Abre: http://localhost:7777
 ```
 
-También disponible con auto-reload en desarrollo:
-
+### Attack Engine (DAST)
 ```bash
-npm run dev
+# Ejemplo de ataque Slowloris
+node fractia.js attack --target http://api.local --profile slowloris --duration 60
 ```
-
-Al iniciar, el CLI preguntará qué proveedor de IA usar (Claude, OpenAI, o ninguno). La elección se guarda en `.env` para la siguiente sesión.
 
 ---
 
-## Dashboard
-
-Al abrir `http://localhost:7777` verás dos pestañas:
-
-### Code Audit
-Analiza el código fuente de `PROJECT_ROOT` buscando vulnerabilidades OWASP Top 10:
+## Módulos del Code Engine (SAST)
 
 | Módulo | Qué detecta |
 |--------|-------------|
-| Autenticación & JWT | JWT fallbacks, algoritmos débiles, bcrypt bajo, OTP, MFA |
-| API Endpoints | Rutas admin sin auth, endpoints de debug expuestos |
-| DDoS & Rate Limiting | Rate limiters ausentes, configuraciones permisivas, Slowloris |
-| Inyecciones SQL/NoSQL | $queryRawUnsafe, concatenación, operadores MongoDB |
-| XSS & CSRF | CORS wildcard, reflexión de input, eval(), innerHTML |
-| Secrets & Leaks | 26 patrones de claves (AWS, OpenAI, Stripe, GitHub, etc.) |
-| Headers & CORS | Helmet ausente, HSTS desactivado, cookies sin httpOnly |
-| Dependencias | npm audit real + base de paquetes con CVEs conocidos |
-| Infraestructura (app) | NODE_ENV, trust proxy, body limit, stack traces expuestos |
-| Bots & Scraping | CAPTCHA ausente, detección de bots, velocity detection |
-| Criptografía | MD5/SHA1, Math.random() para tokens, AES ECB, IVs estáticos |
-| Logging & Monitoreo | Loggers estructurados, datos sensibles en logs, traceId |
-
-Niveles de profundidad:
-- **Standard**: Solo análisis estático (rápido, sin IA)
-- **Deep Audit**: Estático + IA analiza vulnerabilidades y construye vectores de ataque
-- **Full Pentest**: Estático + IA construye cadenas de ataque de múltiples pasos con payloads
-
-### Infra Audit (IronBase Engine)
-Audita el servidor Linux donde corre Fractia:
-
-| Módulo | Qué detecta |
-|--------|-------------|
-| Seguridad VPS | Evaluación integral: kernel, usuarios, SSH, servicios, puertos |
-| SSH Hardening | PermitRootLogin, PasswordAuthentication, wizard de usuario seguro |
-| Firewall (UFW) | Estado, políticas, conflictos, interferencia Docker |
-| Permisos Filesystem | /, /etc, /boot, /root, SUID/SGID, world-writable dirs |
-| Vulnerabilidades | Paquetes con CVEs (USN), kernel EOL, OpenSSL, sudo, glibc |
-| Usuarios & Privilegios | UID 0 duplicados, contraseñas vacías, sudoers |
-| Sistema | OS version, kernel, NTP, estado de actualizaciones |
-| Red & Puertos | Puertos en escucha, IPv6, exposición de servicios |
-| Servicios | Docker, auditd, journald |
+| Autenticación & JWT | JWT fallbacks, algoritmos débiles, hashing inseguro, OTP |
+| API Endpoints | Rutas admin sin auth, endpoints de debug, verbos inseguros |
+| DDoS & Rate Limiting | Rate limiters ausentes, timeouts de servidor (Slowloris) |
+| Inyecciones SQL/NoSQL | $queryRawUnsafe, f-strings en Python, operadores MongoDB |
+| XSS & CSRF | CORS wildcard, reflexión de input, eval, innerHTML |
+| Secrets & Leaks | +26 patrones de claves (AWS, OpenAI, Stripe, etc.) |
+| Headers & CORS | Helmet ausente, HSTS, cookies sin httpOnly/secure |
+| Next.js Security | Server Actions inseguras, dangerousSetInnerHTML, middleware |
+| Dependencias | CVEs conocidos en npm/pip y auditoría de lockfiles |
+| Infraestructura (app) | NODE_ENV, trust proxy, body limits, stack traces |
+| Bots & Scraping | CAPTCHA ausente, detección de bots, velocity tracking |
+| Criptografía | MD5/SHA1, Math.random(), AES ECB, IVs estáticos |
+| Logging & Monitoreo | PII en logs, loggers no estructurados, traceId |
 
 ---
 
@@ -129,51 +103,34 @@ Audita el servidor Linux donde corre Fractia:
 
 ```text
 fractia/
-├── server.js                  # Express + orchestrador de ambos engines
-├── config.js                  # Carga y validación de .env
-├── index.html                 # Dashboard (tabs Code / Infra)
-├── package.json               # v3.0.0
-├── auditors/                  # 12 auditores del Code Engine
-│   ├── auth.js
-│   ├── api.js
-│   ├── ddos.js
-│   ├── sql.js
-│   ├── xss.js
-│   ├── secrets.js
-│   ├── headers.js
-│   ├── deps.js
-│   ├── infra.js
-│   ├── bots.js
-│   ├── crypto.js
-│   └── logs.js
+├── server.js                  # Orquestador Web Express
+├── fractia.js                 # Entrypoint CLI interactivo
+├── index.html                 # Dashboard moderno (Vanilla CSS/JS)
+├── auditors/                  # 13 auditores modulares (SAST)
+│   ├── auth.js                # Soporta Node.js y Python
+│   ├── sql.js                 # Soporta Prisma, SQLAlchemy, etc.
+│   ├── nextjs.js              # Auditoría específica Next.js
+│   └── ...
 ├── utils/
-│   ├── fileScanner.js         # Navegación y grep de archivos fuente
-│   ├── claudeClient.js        # Integración Anthropic Claude
-│   └── openaiClient.js        # Integración OpenAI GPT-4o
+│   ├── fileScanner.js         # Motor de escaneo y grep
+│   └── projectType.js         # Detección automática Node/Python
 └── engines/
-    ├── ironbaseRunner.js       # Wrapper Node.js → IronBase (Bash)
-    └── ironbase/               # IronBase Engine completo
-        ├── cmd/ironbase        # CLI de IronBase
-        ├── core/               # Engine, findings, reporting, utils
-        ├── modules/            # 9 módulos Bash de hardening
-        └── profiles/           # Perfiles YAML de seguridad
+    ├── codeAudit.js           # Lógica central del Code Engine
+    └── ironbase/              # Engine de infraestructura (Bash)
 ```
-
-### Endpoints API
-
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/health` | Estado del servidor y engines disponibles |
-| GET | `/api/structure` | Estructura del proyecto auditado |
-| GET | `/api/infra-modules` | Lista de módulos IronBase disponibles |
-| POST | `/api/audit` | Ejecutar auditoría de código |
-| POST | `/api/infra-audit` | Ejecutar auditoría de infraestructura |
 
 ---
 
-## Notas de Uso
+## Roadmap 🚀
 
-- **Nunca** desplegar Fractia en producción junto al proyecto que audita. Correr en local, QA, o en el servidor de forma aislada.
-- Los análisis estáticos pueden producir falsos positivos si el código usa abstracciones complejas o patrones no convencionales.
-- La auditoría de infraestructura ejecuta IronBase directamente en el sistema anfitrión. Para resultados completos (especialmente en módulos como `secure-vps` y `firewall`), ejecutar con `sudo`.
-- Los resultados se exportan como JSON desde el botón "Exportar Reporte" en el dashboard.
+- [ ] **Mobile Engine**: Auditoría estática para **Flutter/Dart** (fuga de tokens en SharedPreferences, SSL Pinning).
+- [ ] **Cloud Engine**: Módulo para auditar configuraciones de AWS S3 y buckets públicos.
+- [ ] **Reportes PDF**: Generación de reportes ejecutivos listos para entrega.
+
+---
+
+## Notas de Seguridad
+
+- **Uso Local**: No despliegues Fractia en producción junto a la app que audita.
+- **Privacidad**: Los secretos detectados son omitidos o redactados antes de ser procesados por la IA.
+
