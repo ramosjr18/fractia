@@ -4,14 +4,23 @@ import { createReadStream } from 'fs';
 import readline from 'readline';
 import { config } from '../config.js';
 
+// Default extensions: JS + TS (covers Express, Next.js, React, etc.)
+export const JS_EXTENSIONS  = ['.js', '.mjs', '.cjs'];
+export const TS_EXTENSIONS  = ['.ts', '.tsx', '.mts', '.cts'];
+export const ALL_EXTENSIONS = [...JS_EXTENSIONS, ...TS_EXTENSIONS, '.jsx'];
+
 export const PROJECT_ROOT = () => config.projectRoot;
-export const BACKEND_ROOT = () => config.projectRoot; // Simplified from path.join(..., 'backend')
+export const BACKEND_ROOT = () => config.projectRoot;
 export const BACKEND_SRC  = () => _structure ? _structure.srcDir : path.join(config.projectRoot, 'src');
 
 let _structure = null;
 
 export function resetStructureCache() {
   _structure = null;
+}
+
+export function getStructure() {
+  return _structure;
 }
 
 export async function findFile(baseDir, candidates) {
@@ -48,6 +57,7 @@ export async function discoverStructure(root = config.projectRoot) {
 
   const result = {
     framework: 'unknown',
+    typescript: false,
     srcDir: root,
     entryFile: null,
     dirs: {},
@@ -55,7 +65,6 @@ export async function discoverStructure(root = config.projectRoot) {
   };
 
   // 0. Determine appRoot: handles monorepos where backend lives in a subdirectory
-  //    e.g. root = /project, actual backend = /project/backend
   const BACKEND_SUBDIRS = ['backend', 'server', 'api', 'service'];
   let appRoot = root;
 
@@ -72,56 +81,106 @@ export async function discoverStructure(root = config.projectRoot) {
     }
   }
 
-  // 1. Walk up for common root files (start from appRoot to catch nested .env/package.json)
+  // 1. Walk up for common root files
   result.files.packageJson = await findUp(appRoot, 'package.json');
   result.files.env = await findUp(appRoot, '.env') || await findUp(root, '.env');
   result.files.gitignore = await findUp(appRoot, '.gitignore') || await findUp(root, '.gitignore');
 
-  // 2. Framework detection
+  // Next.js specific config files
+  result.files.nextConfig = await findFile(appRoot, ['next.config.js', 'next.config.mjs', 'next.config.ts']);
+  result.files.middleware = await findFile(appRoot, ['middleware.ts', 'middleware.js']);
+
+  // 2. Framework detection (order matters: more specific first)
   if (result.files.packageJson) {
     const pkgContent = await readFile(result.files.packageJson);
     if (pkgContent) {
       try {
         const pkg = JSON.parse(pkgContent);
         const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-        if (deps.express) result.framework = 'express';
-        else if (deps.fastify) result.framework = 'fastify';
+
+        // Detect TypeScript
+        result.typescript = !!(deps.typescript || deps['@types/node'] || deps['@types/react']);
+
+        // Detect framework (most specific first)
+        if (deps.next)              result.framework = 'nextjs';
         else if (deps['@nestjs/core']) result.framework = 'nestjs';
-        else if (deps.koa) result.framework = 'koa';
+        else if (deps.nuxt)         result.framework = 'nuxt';
+        else if (deps.express)      result.framework = 'express';
+        else if (deps.fastify)      result.framework = 'fastify';
+        else if (deps.koa)          result.framework = 'koa';
         else if (deps['@hapi/hapi']) result.framework = 'hapi';
+        else if (deps.react)        result.framework = 'react';
+        else if (deps.vue)          result.framework = 'vue';
+        else if (deps.svelte)       result.framework = 'svelte';
+        else if (deps.angular || deps['@angular/core']) result.framework = 'angular';
       } catch {}
     }
   }
 
   // 3. Find srcDir within appRoot
-  const srcCandidate = directSrc || await findDir(appRoot, ['src', 'app', 'lib', 'source', '.']);
+  // For Next.js with App Router, 'app' is the primary source directory
+  const srcCandidates = result.framework === 'nextjs'
+    ? ['src', 'app', 'pages', 'lib', 'source']
+    : ['src', 'app', 'lib', 'source'];
+
+  const srcCandidate = directSrc || await findDir(appRoot, srcCandidates);
   if (srcCandidate && appRoot === root) {
     result.srcDir = path.join(root, srcCandidate);
   } else if (appRoot !== root) {
-    const nestedSrc = await findDir(appRoot, ['src', 'app', 'lib', 'source']);
+    const nestedSrc = await findDir(appRoot, srcCandidates);
     result.srcDir = nestedSrc ? path.join(appRoot, nestedSrc) : appRoot;
   } else {
     result.srcDir = root;
   }
 
-  // 4. Find entry file
-  const entryCandidate = await findFile(result.srcDir, ['server.js', 'app.js', 'index.js', 'main.js']);
+  // 4. Find entry file (include TS variants)
+  const entryNames = result.framework === 'nextjs'
+    ? ['next.config.js', 'next.config.mjs', 'next.config.ts', 'app/layout.tsx', 'app/layout.js', 'pages/_app.tsx', 'pages/_app.js']
+    : ['server.js', 'server.ts', 'app.js', 'app.ts', 'index.js', 'index.ts', 'main.js', 'main.ts'];
+
+  const entryCandidate = await findFile(result.srcDir, entryNames);
   if (entryCandidate) {
     result.entryFile = path.join(result.srcDir, entryCandidate);
   } else {
-    const appRootEntry = await findFile(appRoot, ['server.js', 'app.js', 'index.js', 'main.js']);
+    const appRootEntry = await findFile(appRoot, entryNames);
     if (appRootEntry) result.entryFile = path.join(appRoot, appRootEntry);
   }
 
-  // 5. Subdirectories
-  const subDirs = ['controllers', 'routes', 'middleware', 'models', 'schemas', 'services', 'workers', 'modules'];
+  // 5. Subdirectories (include Next.js-specific dirs)
+  const subDirs = [
+    'controllers', 'routes', 'middleware', 'models', 'schemas',
+    'services', 'workers', 'modules',
+    // Next.js / React
+    'components', 'hooks', 'store', 'stores', 'providers', 'utils', 'lib',
+    'api',          // Next.js API routes (app/api/ or pages/api/)
+    'features',     // Feature-based architecture
+    'types',        // TypeScript types
+  ];
   for (const d of subDirs) {
     const found = await findDir(result.srcDir, [d]);
     if (found) result.dirs[d] = path.join(result.srcDir, found);
   }
 
+  // For Next.js, also scan the root-level directories
+  if (result.framework === 'nextjs' && appRoot === root) {
+    for (const d of ['components', 'lib', 'hooks', 'store', 'stores', 'utils', 'types']) {
+      if (!result.dirs[d]) {
+        const found = await findDir(root, [d]);
+        if (found) result.dirs[d] = path.join(root, found);
+      }
+    }
+  }
+
   _structure = result;
   return result;
+}
+
+/**
+ * Get the appropriate file extensions based on detected project structure.
+ */
+export function getProjectExtensions() {
+  if (_structure?.typescript) return ALL_EXTENSIONS;
+  return [...JS_EXTENSIONS, '.jsx'];
 }
 
 const MAX_FILE_SIZE = 500_000; // 500KB guard
@@ -142,8 +201,9 @@ export async function readFile(filePath) {
 /**
  * Recursively walk a directory and return all files matching extension filter.
  * Returns array of { filePath, content } objects.
+ * Now defaults to ALL_EXTENSIONS (JS + TS) instead of just .js.
  */
-export async function readDir(dirPath, extensions = ['.js']) {
+export async function readDir(dirPath, extensions = ALL_EXTENSIONS) {
   const results = [];
   try {
     await walk(dirPath, extensions, results);
@@ -164,7 +224,7 @@ async function walk(dirPath, extensions, results) {
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
-      if (['node_modules', '.git', 'dist', 'build', '.next', 'coverage'].includes(entry.name)) continue;
+      if (['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '.turbo', '.vercel', '__pycache__', 'venv', '.venv', 'site-packages', 'vendor'].includes(entry.name)) continue;
       await walk(fullPath, extensions, results);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name);
@@ -182,7 +242,7 @@ async function walk(dirPath, extensions, results) {
  * NEVER returns actual secret values — caller must redact if needed.
  */
 export async function grepFiles(dirPath, patterns, options = {}) {
-  const { extensions = ['.js'], contextLines = 2, excludeDirs = [] } = options;
+  const { extensions = ALL_EXTENSIONS, contextLines = 2, excludeDirs = [] } = options;
   const files = await readDir(dirPath, extensions);
   const matches = [];
   const compiledPatterns = patterns.map(p => typeof p === 'string' ? new RegExp(p, 'i') : p);

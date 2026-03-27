@@ -69,6 +69,7 @@ const AUDITORS = {
   bots:    () => import('./auditors/bots.js'),
   crypto:  () => import('./auditors/crypto.js'),
   logs:    () => import('./auditors/logs.js'),
+  nextjs:  () => import('./auditors/nextjs.js'),
 };
 
 // ── Risk score calculation ──────────────────────────────────────────────────
