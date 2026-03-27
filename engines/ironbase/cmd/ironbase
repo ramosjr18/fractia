@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# cmd/ironbase
+# CLI Entrypoint for IronBase
+
+# Resolve absolute path to the script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Forward to core engine
+# Usage: ./ironbase [scan|apply] [flags]
+
+ACTION=$1
+
+if [[ -z "$ACTION" ]]; then
+    echo "Usage: $0 [scan|apply] [--module <name>] [--profile <path>]"
+    exit 1
+fi
+
+if [[ "$ACTION" != "scan" && "$ACTION" != "apply" ]]; then
+    echo "Invalid action: $ACTION"
+    echo "Usage: $0 [scan|apply] [--module <name>] [--profile <path>]"
+    exit 1
+fi
+
+# Make the engine script executable just in case
+chmod +x "$ROOT_DIR/core/engine.sh"
+
+# Call the engine
+source "$ROOT_DIR/core/engine.sh"
+
+# Pass all arguments to the engine main function
+engine_main "$@"

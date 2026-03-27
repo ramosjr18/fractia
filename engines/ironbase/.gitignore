@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+*.bak
+
+# Logs
+*.log
+
+# Temporary
+tmp/
+temp/
+
+# Node/JS (if UI expands)
+node_modules/
+dist/
+build/
+
+# Project specific
+estado_actual.md
+*.txt
+vulnerability-module.md
+
+# Reporting output (all execution artifacts)
+/output/**

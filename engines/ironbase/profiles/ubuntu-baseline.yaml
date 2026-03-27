@@ -1,0 +1,25 @@
+# profiles/ubuntu-baseline.yaml
+# Expanding baseline profile for IronBase v0.2
+
+modules:
+  firewall:
+    enabled: true
+    description: "Ensure UFW is active"
+  ssh:
+    enabled: true
+    description: "Lock down SSH"
+  system:
+    enabled: true
+    description: "System updates and config"
+  users:
+    enabled: true
+    description: "User privileges and shadow file checks"
+  network:
+    enabled: true
+    description: "Port exposure checks"
+  services:
+    enabled: true
+    description: "Auditd and Docker checks"
+  filesystem:
+    enabled: true
+    description: "Permission checks"
