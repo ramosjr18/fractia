@@ -27,12 +27,10 @@ loadEnv();
 
 export const config = {
   port: parseInt(process.env.PORT || '7777', 10),
-  projectRoot: process.env.PROJECT_ROOT || path.join(__dirname, '..'),
+  projectRoot: process.env.PROJECT_ROOT || '',   // resolved at runtime by selectProject
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   aiProvider: process.env.AI_PROVIDER || '',   // 'claude' | 'openai' | 'none' — set at runtime
 };
 
-if (!existsSync(config.projectRoot)) {
-  throw new Error(`[Fractia] Fatal Error: PROJECT_ROOT does not exist on disk: ${config.projectRoot}`);
-}
+// No longer throws on missing PROJECT_ROOT — handled interactively by server.js

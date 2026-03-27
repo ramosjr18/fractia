@@ -1,175 +1,71 @@
+/**
+ * Fractia Web Server — optional UI, started via `fractia serve` or menu option [s]
+ * Can also be run directly: node server.js (legacy mode, shows project selector on start)
+ */
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import readline from 'readline';
 import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { config } from './config.js';
-import { enrichWithClaude } from './utils/claudeClient.js';
-import { enrichWithOpenAI } from './utils/openaiClient.js';
-import { discoverStructure } from './utils/fileScanner.js';
+import chalk from 'chalk';
+
+import { config }              from './config.js';
+import { discoverStructure }   from './utils/fileScanner.js';
 import { isIronbaseAvailable, getInfraModules, runInfraScan } from './engines/ironbaseRunner.js';
+import { runCodeAudit, calculateRiskScore, generateSummary, ALL_MODULES } from './engines/codeAudit.js';
+import { AuditLogger, InfraLogger } from './cli/auditLogger.js';
+import { t, link, divider, logo, colors, box } from './cli/theme.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ── Express app ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors({ origin: /^http:\/\/localhost(:\d+)?$/ }));
 app.use(express.json());
 
-// Serve the HTML UI
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 app.get('/api/health', (_req, res) => {
   res.json({
-    status: 'ok',
-    version: '3.0.0',
+    status: 'ok', version: '3.0.0',
     projectRoot: config.projectRoot,
-    aiProvider: config.aiProvider || 'none',
-    engines: {
-      code: true,
-      infra: isIronbaseAvailable(),
-    },
+    aiProvider:  config.aiProvider || 'none',
+    engines: { code: true, infra: isIronbaseAvailable() },
   });
 });
 
 app.get('/api/structure', async (_req, res) => {
-  try {
-    const struct = await discoverStructure();
-    res.json(struct);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  try   { res.json(await discoverStructure()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Infrastructure modules endpoint ─────────────────────────────────────────
 app.get('/api/infra-modules', (_req, res) => {
-  res.json({
-    available: isIronbaseAvailable(),
-    modules: getInfraModules(),
-  });
+  res.json({ available: isIronbaseAvailable(), modules: getInfraModules() });
 });
 
-// Track concurrent runs per engine
-let isCodeRunning = false;
+// ── Concurrent run guards ────────────────────────────────────────────────────
+let isCodeRunning  = false;
 let isInfraRunning = false;
 
-// ── Auditor registry (Code Engine) ──────────────────────────────────────────
-const AUDITORS = {
-  auth:    () => import('./auditors/auth.js'),
-  api:     () => import('./auditors/api.js'),
-  ddos:    () => import('./auditors/ddos.js'),
-  sql:     () => import('./auditors/sql.js'),
-  xss:     () => import('./auditors/xss.js'),
-  secrets: () => import('./auditors/secrets.js'),
-  headers: () => import('./auditors/headers.js'),
-  deps:    () => import('./auditors/deps.js'),
-  infra:   () => import('./auditors/infra.js'),
-  bots:    () => import('./auditors/bots.js'),
-  crypto:  () => import('./auditors/crypto.js'),
-  logs:    () => import('./auditors/logs.js'),
-  nextjs:  () => import('./auditors/nextjs.js'),
-};
-
-// ── Risk score calculation ──────────────────────────────────────────────────
-function calculateRiskScore(results) {
-  const WEIGHTS = { critical: 25, high: 15, medium: 7, low: 2, ok: 0 };
-  const total = results.reduce((sum, r) => sum + (WEIGHTS[r.severity] || 0), 0);
-  return Math.min(100, total);
-}
-
-function generateSummary(results, riskScore) {
-  const counts = { critical: 0, high: 0, medium: 0, low: 0, ok: 0 };
-  for (const r of results) counts[r.severity] = (counts[r.severity] || 0) + 1;
-
-  const criticalMods = results.filter(r => r.severity === 'critical').map(r => r.name);
-  const highMods     = results.filter(r => r.severity === 'high').map(r => r.name);
-
-  let summary = `Risk score ${riskScore}/100 across ${results.length} modules. `;
-
-  if (counts.critical > 0) {
-    summary += `CRITICAL issues in: ${criticalMods.join(', ')}. `;
-  }
-  if (counts.high > 0) {
-    summary += `HIGH severity in: ${highMods.join(', ')}. `;
-  }
-  if (counts.critical === 0 && counts.high === 0) {
-    summary += 'No critical or high severity issues detected. ';
-  }
-
-  summary += `${counts.ok} modules passed cleanly.`;
-  return summary;
-}
-
-// ── Code audit endpoint ─────────────────────────────────────────────────────
+// ── Code audit endpoint ──────────────────────────────────────────────────────
 app.post('/api/audit', async (req, res) => {
-  if (isCodeRunning) {
-    return res.status(429).json({ error: 'A code audit is already in progress. Please wait.' });
-  }
+  if (isCodeRunning) return res.status(429).json({ error: 'Code audit already in progress.' });
 
-  const { modules = Object.keys(AUDITORS), depth = 'standard' } = req.body;
-  const validModules = modules.filter(m => AUDITORS[m]);
-
-  if (validModules.length === 0) {
-    return res.status(400).json({ error: 'No valid modules selected.' });
-  }
+  const { modules = ALL_MODULES, depth = 'standard' } = req.body;
+  const validModules = modules.filter(m => ALL_MODULES.includes(m));
+  if (!validModules.length) return res.status(400).json({ error: 'No valid modules selected.' });
 
   isCodeRunning = true;
-  const startTime = Date.now();
+  const logger  = new AuditLogger({ engine: 'code', depth, projectRoot: config.projectRoot });
+  logger.start(validModules);
 
   try {
-    // Phase 1: Run all selected auditors in parallel
-    const auditResults = await Promise.all(
-      validModules.map(async (mod) => {
-        try {
-          const { audit } = await AUDITORS[mod]();
-          return await audit(depth);
-        } catch (err) {
-          console.error(`[${mod}] Auditor error:`, err.message);
-          return {
-            id: mod,
-            name: mod,
-            severity: 'low',
-            score: 100,
-            findings: [{ type: 'info', title: 'Auditor encountered an error', description: err.message, code_example: null, cve: null }],
-            recommendations: [],
-            _error: true,
-          };
-        }
-      })
-    );
-
-    // Phase 2: Enrich with AI (deep/full modes only, if a provider is selected)
-    const aiActive = depth !== 'standard' && config.aiProvider && config.aiProvider !== 'none';
-    if (aiActive) {
-      try {
-        if (config.aiProvider === 'openai') await enrichWithOpenAI(auditResults, depth);
-        else if (config.aiProvider === 'claude') await enrichWithClaude(auditResults, depth);
-      } catch (err) {
-        console.warn(`[${config.aiProvider}] Enrichment failed:`, err.message);
-      }
-    }
-
-    // Phase 3: Build final response — strip internal fields
-    const cleanResults = auditResults.map(({ _codeSnippets, _error, ...r }) => r);
-    const riskScore    = calculateRiskScore(cleanResults);
-    const summary      = generateSummary(cleanResults, riskScore);
-
-    res.json({
-      summary,
-      risk_score: riskScore,
-      modules: cleanResults,
-      meta: {
-        generatedAt:    new Date().toISOString(),
-        engine:         'code',
-        depth,
-        projectRoot:    config.projectRoot,
-        aiProvider:     config.aiProvider || 'none',
-        aiEnriched:     aiActive,
-        scanDurationMs: Date.now() - startTime,
-      },
+    const { results, riskScore, summary, meta } = await runCodeAudit(validModules, depth, {
+      onModuleComplete: (mod, result, ms) => logger.moduleComplete(mod, result, ms),
     });
+
+    logger.end(riskScore);
+    res.json({ summary, risk_score: riskScore, modules: results, meta });
   } catch (err) {
     console.error('[server] Code audit failed:', err);
     res.status(500).json({ error: err.message });
@@ -178,102 +74,99 @@ app.post('/api/audit', async (req, res) => {
   }
 });
 
-// ── Infrastructure audit endpoint (IronBase) ────────────────────────────────
+// ── Infra audit endpoint ─────────────────────────────────────────────────────
 app.post('/api/infra-audit', async (req, res) => {
-  if (isInfraRunning) {
-    return res.status(429).json({ error: 'An infrastructure audit is already in progress. Please wait.' });
-  }
-
-  if (!isIronbaseAvailable()) {
-    return res.status(503).json({ error: 'IronBase engine is not available. Check engines/ironbase/ directory.' });
-  }
+  if (isInfraRunning) return res.status(429).json({ error: 'Infra audit already in progress.' });
+  if (!isIronbaseAvailable()) return res.status(503).json({ error: 'IronBase engine not available.' });
 
   const { modules } = req.body;
   isInfraRunning = true;
 
+  const infraLogger = new InfraLogger(config.projectRoot);
+  infraLogger.start(modules || []);
+
   try {
     const result = await runInfraScan(modules);
+    infraLogger.end(result);
     res.json(result);
   } catch (err) {
-    console.error('[server] Infra audit failed:', err);
+    infraLogger.error(err);
     res.status(500).json({ error: err.message });
   } finally {
     isInfraRunning = false;
   }
 });
 
-// ── Persist a key=value pair into .env ──────────────────────────────────────
-function saveKeyToEnv(key, value) {
-  const envPath = path.join(__dirname, '.env');
-  let content = '';
-  try { content = readFileSync(envPath, 'utf8'); } catch { /* no .env yet */ }
-  const lines = content.split('\n');
-  const idx = lines.findIndex(l => l.startsWith(`${key}=`));
-  if (idx >= 0) lines[idx] = `${key}=${value}`;
-  else lines.push(`${key}=${value}`);
-  writeFileSync(envPath, lines.join('\n'), 'utf8');
-}
-
-// ── AI provider selection prompt ────────────────────────────────────────────
-async function selectAIProvider() {
-  // If pre-configured via env var, use it directly
-  if (config.aiProvider) return;
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q) => new Promise(resolve => rl.question(q, resolve));
-
-  console.log('\n  ┌─────────────────────────────────────────┐');
-  console.log('  │         Enriquecimiento con IA          │');
-  console.log('  └─────────────────────────────────────────┘\n');
-  console.log('    [1] Claude (Anthropic)');
-  console.log('    [2] OpenAI (GPT-4o)');
-  console.log('    [3] Sin IA — solo análisis estático\n');
-
-  const ans = await ask('  Selecciona proveedor [1/2/3]: ');
-  const choice = ans.trim() === '2' ? 'openai' : ans.trim() === '3' ? 'none' : 'claude';
-
-  if (choice === 'claude' && !config.anthropicApiKey) {
-    const key = await ask('  ANTHROPIC_API_KEY: ');
-    const trimmed = key.trim();
-    if (trimmed) { config.anthropicApiKey = trimmed; saveKeyToEnv('ANTHROPIC_API_KEY', trimmed); }
-    else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
-  }
-
-  if (choice === 'openai' && !config.openaiApiKey) {
-    const key = await ask('  OPENAI_API_KEY: ');
-    const trimmed = key.trim();
-    if (trimmed) { config.openaiApiKey = trimmed; saveKeyToEnv('OPENAI_API_KEY', trimmed); }
-    else { console.log('  Sin key — usando modo sin IA.\n'); config.aiProvider = 'none'; rl.close(); return; }
-  }
-
-  config.aiProvider = choice;
-  rl.close();
-}
-
-// ── Start ───────────────────────────────────────────────────────────────────
-await selectAIProvider();
-
-app.listen(config.port, async () => {
-  const structure = await discoverStructure();
-  const ironbaseStatus = isIronbaseAvailable() ? '✓ IronBase Engine detectado' : '✗ IronBase no disponible';
+// ── Startup banner ───────────────────────────────────────────────────────────
+async function printBanner() {
+  const structure    = await discoverStructure();
+  const ironbaseUp   = isIronbaseAvailable();
+  const uiUrl        = `http://localhost:${config.port}`;
   const providerLabel = {
-    claude: '✓ Claude (Anthropic) — deep/full modes',
-    openai: '✓ OpenAI (GPT-4o) — deep/full modes',
-    none:   '✗ Sin IA (solo análisis estático)',
-  }[config.aiProvider] || '✗ Sin IA';
+    claude: t.ok(`Claude (Anthropic) ${colors.dim('— deep/full modes')}`),
+    openai: t.ok(`OpenAI (GPT-4o) ${colors.dim('— deep/full modes')}`),
+    none:   t.fail('Sin IA'),
+  }[config.aiProvider] || t.fail('Sin IA');
 
-  console.log(`\n  ███████╗██████╗  █████╗  ██████╗████████╗██╗ █████╗`);
-  console.log(`  ██╔════╝██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔══██╗`);
-  console.log(`  █████╗  ██████╔╝███████║██║        ██║   ██║███████║`);
-  console.log(`  ██╔══╝  ██╔══██╗██╔══██║██║        ██║   ██║██╔══██║`);
-  console.log(`  ██║     ██║  ██║██║  ██║╚██████╗   ██║   ██║██║  ██║`);
-  console.log(`  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝   ╚═╝╚═╝  ╚═╝\n`);
-  console.log(`  Full-Stack Security Platform — v3.0.0`);
-  console.log(`  ─────────────────────────────────────────`);
-  console.log(`  UI:           http://localhost:${config.port}`);
-  console.log(`  Project:      ${config.projectRoot}`);
-  console.log(`  Framework:    ${structure.framework} (src: ${structure.srcDir})`);
-  console.log(`  IA:           ${providerLabel}`);
-  console.log(`  Infra:        ${ironbaseStatus}`);
-  console.log(`  ─────────────────────────────────────────\n`);
-});
+  console.log('');
+  console.log(logo());
+  console.log('');
+  console.log(`  ${colors.accent.bold('Full-Stack Security Platform')} ${colors.dim('— v3.0.0')}`);
+  console.log(`  ${divider()}`);
+  console.log('');
+  console.log(`  ${t.label('UI')}           ${link(uiUrl, uiUrl)}`);
+  console.log(`  ${t.label('Proyecto')}     ${colors.infra(path.basename(config.projectRoot))} ${colors.dim(config.projectRoot)}`);
+  console.log(`  ${t.label('Framework')}    ${colors.text(structure.framework)} ${colors.dim(`(src: ${structure.srcDir})`)}`);
+  console.log(`  ${t.label('IA')}           ${providerLabel}`);
+  console.log(`  ${t.label('Infra')}        ${ironbaseUp ? t.ok('IronBase Engine detectado') : t.fail('IronBase no disponible')}`);
+  console.log('');
+  console.log(`  ${divider()}`);
+  console.log(`  ${colors.dim('Ctrl+C para detener el servidor')}`);
+  console.log('');
+}
+
+// ── Exported start function (called from fractia.js menu) ───────────────────
+export async function startServer() {
+  return new Promise((resolve) => {
+    app.listen(config.port, async () => {
+      await printBanner();
+      resolve();
+    });
+  });
+}
+
+// ── Legacy direct mode: node server.js ──────────────────────────────────────
+// If run directly (not imported), behave like fractia with just the serve flow
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
+  // Redirect to the full CLI entrypoint
+  console.log('');
+  console.log(chalk.hex('#00b4d8')('  ▸ Usa `node fractia.js` para el CLI completo, o `node fractia.js serve` para solo la web.'));
+  console.log('');
+
+  // Still start the server for backwards compatibility
+  import('./cli/projectSelector.js').then(async ({ selectProject, addToHistory }) => {
+    import('./cli/configStore.js').then(async ({ store }) => {
+      import('readline').then(async (rl) => {
+        const { existsSync } = await import('fs');
+
+        const cliArg = process.argv[2];
+        if (cliArg && cliArg !== '--') {
+          const resolved = path.resolve(cliArg);
+          if (!existsSync(resolved)) {
+            console.log(t.fail(`Ruta no existe: ${resolved}`)); process.exit(1);
+          }
+          config.projectRoot = resolved;
+          addToHistory(resolved);
+        } else {
+          config.projectRoot = await selectProject(process.env.PROJECT_ROOT || '');
+        }
+
+        const savedAI = store.get('aiProvider');
+        if (savedAI && !config.aiProvider) config.aiProvider = savedAI;
+
+        await startServer();
+      });
+    });
+  });
+}

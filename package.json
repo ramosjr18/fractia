@@ -1,15 +1,20 @@
 {
   "name": "fractia",
   "version": "3.0.0",
-  "description": "Full-stack security platform — code audit + infrastructure hardening (IronBase engine)",
+  "description": "Full-stack security platform — CLI-first, code audit + infrastructure hardening",
   "type": "module",
-  "main": "server.js",
+  "main": "fractia.js",
+  "bin": {
+    "fractia": "./fractia.js"
+  },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node fractia.js",
+    "serve": "node fractia.js serve",
+    "dev":   "node --watch fractia.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "chalk": "^5.6.2",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "openai": "^6.32.0"
