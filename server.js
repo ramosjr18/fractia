@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { enrichWithClaude } from './utils/claudeClient.js';
 import { enrichWithOpenAI } from './utils/openaiClient.js';
 import { discoverStructure } from './utils/fileScanner.js';
+import { isIronbaseAvailable, getInfraModules, runInfraScan } from './engines/ironbaseRunner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,9 +24,13 @@ app.get('/', (_req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    version: '1.0.0',
+    version: '3.0.0',
     projectRoot: config.projectRoot,
     aiProvider: config.aiProvider || 'none',
+    engines: {
+      code: true,
+      infra: isIronbaseAvailable(),
+    },
   });
 });
 
@@ -38,10 +43,19 @@ app.get('/api/structure', async (_req, res) => {
   }
 });
 
-// Track concurrent runs
-let isRunning = false;
+// ── Infrastructure modules endpoint ─────────────────────────────────────────
+app.get('/api/infra-modules', (_req, res) => {
+  res.json({
+    available: isIronbaseAvailable(),
+    modules: getInfraModules(),
+  });
+});
 
-// ── Auditor registry ────────────────────────────────────────────────────────
+// Track concurrent runs per engine
+let isCodeRunning = false;
+let isInfraRunning = false;
+
+// ── Auditor registry (Code Engine) ──────────────────────────────────────────
 const AUDITORS = {
   auth:    () => import('./auditors/auth.js'),
   api:     () => import('./auditors/api.js'),
@@ -87,10 +101,10 @@ function generateSummary(results, riskScore) {
   return summary;
 }
 
-// ── Main audit endpoint ─────────────────────────────────────────────────────
+// ── Code audit endpoint ─────────────────────────────────────────────────────
 app.post('/api/audit', async (req, res) => {
-  if (isRunning) {
-    return res.status(429).json({ error: 'An audit is already in progress. Please wait.' });
+  if (isCodeRunning) {
+    return res.status(429).json({ error: 'A code audit is already in progress. Please wait.' });
   }
 
   const { modules = Object.keys(AUDITORS), depth = 'standard' } = req.body;
@@ -100,7 +114,7 @@ app.post('/api/audit', async (req, res) => {
     return res.status(400).json({ error: 'No valid modules selected.' });
   }
 
-  isRunning = true;
+  isCodeRunning = true;
   const startTime = Date.now();
 
   try {
@@ -147,6 +161,7 @@ app.post('/api/audit', async (req, res) => {
       modules: cleanResults,
       meta: {
         generatedAt:    new Date().toISOString(),
+        engine:         'code',
         depth,
         projectRoot:    config.projectRoot,
         aiProvider:     config.aiProvider || 'none',
@@ -155,10 +170,34 @@ app.post('/api/audit', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[server] Audit failed:', err);
+    console.error('[server] Code audit failed:', err);
     res.status(500).json({ error: err.message });
   } finally {
-    isRunning = false;
+    isCodeRunning = false;
+  }
+});
+
+// ── Infrastructure audit endpoint (IronBase) ────────────────────────────────
+app.post('/api/infra-audit', async (req, res) => {
+  if (isInfraRunning) {
+    return res.status(429).json({ error: 'An infrastructure audit is already in progress. Please wait.' });
+  }
+
+  if (!isIronbaseAvailable()) {
+    return res.status(503).json({ error: 'IronBase engine is not available. Check engines/ironbase/ directory.' });
+  }
+
+  const { modules } = req.body;
+  isInfraRunning = true;
+
+  try {
+    const result = await runInfraScan(modules);
+    res.json(result);
+  } catch (err) {
+    console.error('[server] Infra audit failed:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    isInfraRunning = false;
   }
 });
 
@@ -215,6 +254,7 @@ await selectAIProvider();
 
 app.listen(config.port, async () => {
   const structure = await discoverStructure();
+  const ironbaseStatus = isIronbaseAvailable() ? '✓ IronBase Engine detectado' : '✗ IronBase no disponible';
   const providerLabel = {
     claude: '✓ Claude (Anthropic) — deep/full modes',
     openai: '✓ OpenAI (GPT-4o) — deep/full modes',
@@ -227,11 +267,12 @@ app.listen(config.port, async () => {
   console.log(`  ██╔══╝  ██╔══██╗██╔══██║██║        ██║   ██║██╔══██║`);
   console.log(`  ██║     ██║  ██║██║  ██║╚██████╗   ██║   ██║██║  ██║`);
   console.log(`  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝   ╚═╝╚═╝  ╚═╝\n`);
-  console.log(`  Security Audit Tool — v2.0.0`);
+  console.log(`  Full-Stack Security Platform — v3.0.0`);
   console.log(`  ─────────────────────────────────────────`);
   console.log(`  UI:           http://localhost:${config.port}`);
   console.log(`  Project:      ${config.projectRoot}`);
   console.log(`  Framework:    ${structure.framework} (src: ${structure.srcDir})`);
   console.log(`  IA:           ${providerLabel}`);
+  console.log(`  Infra:        ${ironbaseStatus}`);
   console.log(`  ─────────────────────────────────────────\n`);
 });

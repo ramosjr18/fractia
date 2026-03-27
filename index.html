@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FRACTIA — Security Audit</title>
+<title>FRACTIA — Full-Stack Security Platform</title>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -15,6 +15,7 @@
     --accent2: #00b4d8;
     --warn: #ff9f1c;
     --danger: #ff2d55;
+    --infra-accent: #a78bfa;
     --muted: #3a4560;
     --text: #c8d6f0;
     --text-dim: #5a6880;
@@ -32,7 +33,6 @@
     overflow-x: hidden;
   }
 
-  /* Grid background */
   body::before {
     content: '';
     position: fixed;
@@ -45,7 +45,6 @@
     z-index: 0;
   }
 
-  /* Glowing orb */
   body::after {
     content: '';
     position: fixed;
@@ -150,9 +149,8 @@
     margin-bottom: 8px;
   }
 
-  .title-section h1 span {
-    color: var(--accent);
-  }
+  .title-section h1 span { color: var(--accent); }
+  .title-section h1 .infra-highlight { color: var(--infra-accent); }
 
   .title-section p {
     font-family: var(--font-mono);
@@ -161,7 +159,103 @@
     letter-spacing: 0.05em;
   }
 
-  /* ── APP INPUT ── */
+  /* ── MODE TABS ── */
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 14px 20px;
+    background: var(--surface);
+    border: none;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.25s;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .mode-tab:not(:last-child) {
+    border-right: 1px solid var(--border);
+  }
+
+  .mode-tab::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: transparent;
+    transition: background 0.25s;
+  }
+
+  .mode-tab.active-code {
+    background: var(--panel);
+    color: var(--accent);
+  }
+
+  .mode-tab.active-code::after {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+
+  .mode-tab.active-infra {
+    background: var(--panel);
+    color: var(--infra-accent);
+  }
+
+  .mode-tab.active-infra::after {
+    background: linear-gradient(90deg, var(--infra-accent), #818cf8);
+  }
+
+  .mode-tab:hover:not(.active-code):not(.active-infra) {
+    background: rgba(255,255,255,0.02);
+    color: var(--text);
+  }
+
+  .tab-icon {
+    font-size: 16px;
+  }
+
+  .tab-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+
+  .badge-code {
+    background: rgba(0,245,160,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(0,245,160,0.2);
+  }
+
+  .badge-infra {
+    background: rgba(167,139,250,0.1);
+    color: var(--infra-accent);
+    border: 1px solid rgba(167,139,250,0.2);
+  }
+
+  /* ── ENGINE PANELS ── */
+  .engine-panel { display: none; }
+  .engine-panel.visible { display: block; }
+
+  /* ── CONFIG PANEL ── */
   .app-config {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -178,6 +272,10 @@
     top: 0; left: 0; right: 0;
     height: 2px;
     background: linear-gradient(90deg, var(--accent), var(--accent2), transparent);
+  }
+
+  .app-config.infra-config::before {
+    background: linear-gradient(90deg, var(--infra-accent), #818cf8, transparent);
   }
 
   .config-grid {
@@ -200,6 +298,10 @@
     margin-bottom: 6px;
   }
 
+  .infra-config .field-label {
+    color: var(--infra-accent);
+  }
+
   .field-input {
     width: 100%;
     background: var(--surface);
@@ -218,6 +320,11 @@
     box-shadow: 0 0 0 2px rgba(0,245,160,0.08);
   }
 
+  .infra-config .field-input:focus {
+    border-color: var(--infra-accent);
+    box-shadow: 0 0 0 2px rgba(167,139,250,0.08);
+  }
+
   .field-input::placeholder { color: var(--muted); }
 
   .field-select {
@@ -234,6 +341,10 @@
     letter-spacing: 0.15em;
     text-transform: uppercase;
     margin-bottom: 10px;
+  }
+
+  .infra-config .modules-label {
+    color: var(--infra-accent);
   }
 
   .modules-grid {
@@ -264,6 +375,13 @@
     color: var(--accent);
     background: rgba(0,245,160,0.06);
     box-shadow: 0 0 10px rgba(0,245,160,0.1);
+  }
+
+  .module-chip.active-infra {
+    border-color: var(--infra-accent);
+    color: var(--infra-accent);
+    background: rgba(167,139,250,0.06);
+    box-shadow: 0 0 10px rgba(167,139,250,0.1);
   }
 
   .module-chip:hover { border-color: var(--accent2); color: var(--accent2); }
@@ -307,6 +425,14 @@
   .run-btn:active { transform: translateY(0); }
   .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  .run-btn-infra {
+    background: var(--infra-accent);
+  }
+
+  .run-btn-infra:hover {
+    box-shadow: 0 0 20px rgba(167,139,250,0.4);
+  }
+
   /* ── OUTPUT PANEL ── */
   .output-panel {
     background: var(--panel);
@@ -349,6 +475,12 @@
 
   .scanning-badge.visible { display: block; }
 
+  .scanning-badge.infra-badge {
+    background: rgba(167,139,250,0.1);
+    color: var(--infra-accent);
+    border-color: rgba(167,139,250,0.2);
+  }
+
   @keyframes badge-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -361,12 +493,10 @@
     overflow-y: auto;
   }
 
-  /* Scrollbar */
   .output-body::-webkit-scrollbar { width: 4px; }
   .output-body::-webkit-scrollbar-track { background: transparent; }
   .output-body::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
 
-  /* Empty state */
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -377,10 +507,7 @@
     color: var(--text-dim);
   }
 
-  .empty-icon {
-    font-size: 36px;
-    opacity: 0.3;
-  }
+  .empty-icon { font-size: 36px; opacity: 0.3; }
 
   .empty-label {
     font-family: var(--font-mono);
@@ -392,7 +519,6 @@
   .report-content { display: none; }
   .report-content.visible { display: block; }
 
-  /* Progress bar */
   .scan-progress {
     margin-bottom: 24px;
     display: none;
@@ -421,6 +547,10 @@
     border-radius: 2px;
     width: 0%;
     transition: width 0.3s ease;
+  }
+
+  .progress-fill.infra-fill {
+    background: linear-gradient(90deg, var(--infra-accent), #818cf8);
   }
 
   /* Module result cards */
@@ -472,11 +602,7 @@
   .severity-low { background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); }
   .severity-ok { background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); }
 
-  .module-name {
-    font-size: 13px;
-    font-weight: 700;
-    color: #fff;
-  }
+  .module-name { font-size: 13px; font-weight: 700; color: #fff; }
 
   .module-score {
     font-family: var(--font-mono);
@@ -507,9 +633,7 @@
   }
 
   .finding:last-child { border-bottom: none; }
-
   .finding-icon { flex-shrink: 0; margin-top: 1px; }
-
   .finding-text { color: var(--text); }
   .finding-text strong { color: #fff; }
   .finding-text .code {
@@ -534,6 +658,13 @@
 
   .rec-box strong { color: var(--accent); }
 
+  .rec-box.infra-rec {
+    background: rgba(167,139,250,0.04);
+    border-left-color: var(--infra-accent);
+  }
+
+  .rec-box.infra-rec strong { color: var(--infra-accent); }
+
   /* Summary bar */
   .summary-bar {
     display: none;
@@ -555,15 +686,13 @@
     color: var(--text-dim);
   }
 
-  .summary-stat span {
-    font-size: 16px;
-    font-weight: 700;
-  }
+  .summary-stat span { font-size: 16px; font-weight: 700; }
 
   .c-red { color: var(--danger); }
   .c-warn { color: var(--warn); }
   .c-blue { color: var(--accent2); }
   .c-green { color: var(--accent); }
+  .c-purple { color: var(--infra-accent); }
 
   .export-btn {
     margin-left: auto;
@@ -581,7 +710,6 @@
 
   .export-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* Terminal line while streaming */
   .terminal-line {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -595,18 +723,31 @@
     color: var(--text-dim);
   }
 
-  .cursor {
-    display: inline-block;
-    width: 8px;
-    height: 13px;
-    background: var(--accent);
-    animation: cursor-blink 0.8s step-end infinite;
-    vertical-align: middle;
-    margin-left: 2px;
+  .terminal-line.infra-line {
+    color: var(--infra-accent);
   }
 
-  @keyframes cursor-blink {
-    50% { opacity: 0; }
+  /* Engine tag on module cards */
+  .engine-tag {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .engine-tag-code {
+    background: rgba(0,245,160,0.08);
+    color: var(--accent);
+    border: 1px solid rgba(0,245,160,0.15);
+  }
+
+  .engine-tag-infra {
+    background: rgba(167,139,250,0.08);
+    color: var(--infra-accent);
+    border: 1px solid rgba(167,139,250,0.15);
   }
 </style>
 </head>
@@ -619,7 +760,7 @@
       <div class="logo-icon"></div>
       <div>
         <div class="logo-text">Fractia</div>
-        <div class="logo-sub">Security Audit Engine v1.0</div>
+        <div class="logo-sub">Full-Stack Security Platform v3.0</div>
       </div>
     </div>
     <div class="header-status">
@@ -631,99 +772,136 @@
   <!-- TITLE -->
   <div class="title-section">
     <h1>Security <span>Audit</span><br>Workflow</h1>
-    <p>// ANÁLISIS EXTENSO DE VULNERABILIDADES POR MÓDULOS — POWERED BY CLAUDE AI</p>
+    <p>// CODE + INFRASTRUCTURE SECURITY ANALYSIS — POWERED BY CLAUDE AI + IRONBASE ENGINE</p>
   </div>
 
-  <!-- CONFIG -->
-  <div class="app-config">
-    <div class="config-grid">
-      <div>
-        <div class="field-label">Nombre de la App</div>
-        <input class="field-input" id="appName" type="text" placeholder="ej. MyApp Backend" />
-      </div>
-      <div>
-        <div class="field-label">Stack / Tecnología</div>
-        <input class="field-input" id="appStack" type="text" placeholder="ej. Node.js, PostgreSQL, Redis" />
-      </div>
-      <div>
-        <div class="field-label">Nivel de Profundidad</div>
-        <select class="field-input field-select" id="depth">
-          <option value="standard">Standard</option>
-          <option value="deep" selected>Deep Audit</option>
-          <option value="full">Full Pentest Simulation</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="modules-label">Módulos a auditar</div>
-    <div class="modules-grid" id="modulesGrid">
-      <div class="module-chip active" data-module="auth">
-        <div class="chip-dot"></div>Autenticación & JWT
-      </div>
-      <div class="module-chip active" data-module="api">
-        <div class="chip-dot"></div>API Endpoints
-      </div>
-      <div class="module-chip active" data-module="ddos">
-        <div class="chip-dot"></div>DDoS & Rate Limiting
-      </div>
-      <div class="module-chip active" data-module="sql">
-        <div class="chip-dot"></div>Inyecciones SQL/NoSQL
-      </div>
-      <div class="module-chip active" data-module="xss">
-        <div class="chip-dot"></div>XSS & CSRF
-      </div>
-      <div class="module-chip active" data-module="secrets">
-        <div class="chip-dot"></div>Secrets & Leaks
-      </div>
-      <div class="module-chip active" data-module="headers">
-        <div class="chip-dot"></div>Headers & CORS
-      </div>
-      <div class="module-chip active" data-module="deps">
-        <div class="chip-dot"></div>Dependencias
-      </div>
-      <div class="module-chip active" data-module="infra">
-        <div class="chip-dot"></div>Infraestructura
-      </div>
-      <div class="module-chip active" data-module="bots">
-        <div class="chip-dot"></div>Bots & Scraping
-      </div>
-      <div class="module-chip" data-module="crypto">
-        <div class="chip-dot"></div>Criptografía
-      </div>
-      <div class="module-chip" data-module="logs">
-        <div class="chip-dot"></div>Logging & Monitoreo
-      </div>
-    </div>
-
-    <div>
-      <div class="field-label" style="margin-bottom:6px">Contexto adicional (opcional)</div>
-      <textarea class="field-input" id="context" rows="2"
-        placeholder="ej. Tenemos usuarios externos, manejamos pagos con Stripe, usamos Cloudflare como CDN..."
-        style="resize:vertical"></textarea>
-    </div>
-
-    <button class="run-btn" id="runBtn" style="margin-top:16px" onclick="runAudit()">
-      ⚡ EJECUTAR AUDITORÍA DE SEGURIDAD
+  <!-- MODE TABS -->
+  <div class="mode-tabs">
+    <button class="mode-tab active-code" onclick="switchMode('code')">
+      <span class="tab-icon">&#60;/&#62;</span>
+      Code Audit
+      <span class="tab-badge badge-code">12 MODULES</span>
+    </button>
+    <button class="mode-tab" onclick="switchMode('infra')">
+      <span class="tab-icon">&#9881;</span>
+      Infra Audit
+      <span class="tab-badge badge-infra">9 MODULES</span>
     </button>
   </div>
 
-  <!-- OUTPUT -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- CODE AUDIT PANEL -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="codePanel" class="engine-panel visible">
+    <div class="app-config">
+      <div class="config-grid">
+        <div>
+          <div class="field-label">Nombre de la App</div>
+          <input class="field-input" id="appName" type="text" placeholder="ej. MyApp Backend" />
+        </div>
+        <div>
+          <div class="field-label">Stack / Tecnologia</div>
+          <input class="field-input" id="appStack" type="text" placeholder="ej. Node.js, PostgreSQL, Redis" />
+        </div>
+        <div>
+          <div class="field-label">Nivel de Profundidad</div>
+          <select class="field-input field-select" id="depth">
+            <option value="standard">Standard</option>
+            <option value="deep" selected>Deep Audit</option>
+            <option value="full">Full Pentest Simulation</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modules-label">Modulos a auditar</div>
+      <div class="modules-grid" id="codeModulesGrid">
+        <div class="module-chip active" data-module="auth"><div class="chip-dot"></div>Autenticacion & JWT</div>
+        <div class="module-chip active" data-module="api"><div class="chip-dot"></div>API Endpoints</div>
+        <div class="module-chip active" data-module="ddos"><div class="chip-dot"></div>DDoS & Rate Limiting</div>
+        <div class="module-chip active" data-module="sql"><div class="chip-dot"></div>Inyecciones SQL/NoSQL</div>
+        <div class="module-chip active" data-module="xss"><div class="chip-dot"></div>XSS & CSRF</div>
+        <div class="module-chip active" data-module="secrets"><div class="chip-dot"></div>Secrets & Leaks</div>
+        <div class="module-chip active" data-module="headers"><div class="chip-dot"></div>Headers & CORS</div>
+        <div class="module-chip active" data-module="deps"><div class="chip-dot"></div>Dependencias</div>
+        <div class="module-chip active" data-module="infra"><div class="chip-dot"></div>Infraestructura</div>
+        <div class="module-chip active" data-module="bots"><div class="chip-dot"></div>Bots & Scraping</div>
+        <div class="module-chip" data-module="crypto"><div class="chip-dot"></div>Criptografia</div>
+        <div class="module-chip" data-module="logs"><div class="chip-dot"></div>Logging & Monitoreo</div>
+      </div>
+
+      <div>
+        <div class="field-label" style="margin-bottom:6px">Contexto adicional (opcional)</div>
+        <textarea class="field-input" id="context" rows="2"
+          placeholder="ej. Tenemos usuarios externos, manejamos pagos con Stripe, usamos Cloudflare como CDN..."
+          style="resize:vertical"></textarea>
+      </div>
+
+      <button class="run-btn" id="runCodeBtn" style="margin-top:16px" onclick="runCodeAudit()">
+        &#9889; EJECUTAR AUDITORIA DE CODIGO
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- INFRA AUDIT PANEL -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="infraPanel" class="engine-panel">
+    <div class="app-config infra-config">
+      <div class="config-grid" style="grid-template-columns: 1fr 1fr;">
+        <div>
+          <div class="field-label">Nombre del Servidor</div>
+          <input class="field-input" id="serverName" type="text" placeholder="ej. prod-web-01, staging-api" />
+        </div>
+        <div>
+          <div class="field-label">Sistema Operativo</div>
+          <input class="field-input" id="serverOS" type="text" placeholder="ej. Ubuntu 22.04, Debian 12" />
+        </div>
+      </div>
+
+      <div class="modules-label">Modulos de infraestructura</div>
+      <div class="modules-grid" id="infraModulesGrid">
+        <div class="module-chip active-infra" data-module="secure-vps"><div class="chip-dot"></div>Seguridad VPS</div>
+        <div class="module-chip active-infra" data-module="ssh"><div class="chip-dot"></div>SSH Hardening</div>
+        <div class="module-chip active-infra" data-module="firewall"><div class="chip-dot"></div>Firewall (UFW)</div>
+        <div class="module-chip active-infra" data-module="filesystem"><div class="chip-dot"></div>Permisos Filesystem</div>
+        <div class="module-chip active-infra" data-module="vulnerability"><div class="chip-dot"></div>Vulnerabilidades</div>
+        <div class="module-chip active-infra" data-module="users"><div class="chip-dot"></div>Usuarios & Privilegios</div>
+        <div class="module-chip active-infra" data-module="system"><div class="chip-dot"></div>Sistema</div>
+        <div class="module-chip active-infra" data-module="network"><div class="chip-dot"></div>Red & Puertos</div>
+        <div class="module-chip active-infra" data-module="services"><div class="chip-dot"></div>Servicios</div>
+      </div>
+
+      <div style="background:rgba(167,139,250,0.04);border:1px solid rgba(167,139,250,0.15);border-radius:6px;padding:12px 16px;margin-bottom:16px;">
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--infra-accent);margin-bottom:4px;">&#9432; NOTA</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);line-height:1.6;">
+          La auditoria de infraestructura ejecuta IronBase Engine directamente en este sistema.
+          Para mejores resultados, ejecuta Fractia en el servidor que deseas auditar con permisos de root.
+        </div>
+      </div>
+
+      <button class="run-btn run-btn-infra" id="runInfraBtn" style="margin-top:0" onclick="runInfraAudit()">
+        &#9881; EJECUTAR AUDITORIA DE INFRAESTRUCTURA
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- OUTPUT (shared) -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
   <div class="output-panel">
     <div class="output-header">
       <div class="output-title">
-        <span>▣</span> AUDIT REPORT
+        <span>&#9635;</span> <span id="outputTitleText">AUDIT REPORT</span>
       </div>
       <div class="scanning-badge" id="scanBadge">SCANNING...</div>
     </div>
 
     <div class="output-body" id="outputBody">
-      <!-- Empty state -->
       <div class="empty-state" id="emptyState">
-        <div class="empty-icon">🛡</div>
-        <div class="empty-label">// Configura y ejecuta la auditoría para ver resultados</div>
+        <div class="empty-icon">&#128737;</div>
+        <div class="empty-label">// Selecciona un modo y ejecuta la auditoria para ver resultados</div>
       </div>
 
-      <!-- Progress -->
       <div class="scan-progress" id="scanProgress">
         <div class="progress-label">
           <span id="progressLabel">Inicializando agente...</span>
@@ -734,96 +912,128 @@
         </div>
       </div>
 
-      <!-- Terminal -->
       <div id="terminalLines"></div>
-
-      <!-- Report -->
       <div class="report-content" id="reportContent"></div>
     </div>
 
     <div class="summary-bar" id="summaryBar">
-      <div class="summary-stat"><span id="statCritical" class="c-red">0</span> Críticos</div>
+      <div class="summary-stat"><span id="statCritical" class="c-red">0</span> Criticos</div>
       <div class="summary-stat"><span id="statHigh" class="c-warn">0</span> Altos</div>
       <div class="summary-stat"><span id="statMedium" class="c-blue">0</span> Medios</div>
       <div class="summary-stat"><span id="statLow" class="c-green">0</span> Bajos</div>
-      <button class="export-btn" onclick="exportReport()">⬇ Exportar Reporte</button>
+      <div id="engineIndicator" class="summary-stat" style="display:none"><span class="engine-tag" id="engineTag"></span></div>
+      <button class="export-btn" onclick="exportReport()">&#11015; Exportar Reporte</button>
     </div>
   </div>
 
 </div>
 
 <script>
-// Module chip toggle
-document.querySelectorAll('.module-chip').forEach(chip => {
+// ── State ───────────────────────────────────────────────────────────────────
+let currentMode = 'code';
+let currentReportData = null;
+
+// ── Mode Switching ──────────────────────────────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode;
+
+  // Update tabs
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.classList.remove('active-code', 'active-infra');
+  });
+  const tabs = document.querySelectorAll('.mode-tab');
+  if (mode === 'code') {
+    tabs[0].classList.add('active-code');
+  } else {
+    tabs[1].classList.add('active-infra');
+  }
+
+  // Update panels
+  document.getElementById('codePanel').classList.toggle('visible', mode === 'code');
+  document.getElementById('infraPanel').classList.toggle('visible', mode === 'infra');
+}
+
+// ── Module chip toggle ──────────────────────────────────────────────────────
+document.querySelectorAll('#codeModulesGrid .module-chip').forEach(chip => {
   chip.addEventListener('click', () => chip.classList.toggle('active'));
 });
 
-// Server health check
+document.querySelectorAll('#infraModulesGrid .module-chip').forEach(chip => {
+  chip.addEventListener('click', () => chip.classList.toggle('active-infra'));
+});
+
+// ── Server health check ─────────────────────────────────────────────────────
 async function checkServerStatus() {
   const statusEl = document.querySelector('.header-status');
   try {
-    const res = await fetch('http://localhost:7777/api/health');
+    const res = await fetch('/api/health');
     const data = await res.json();
-    statusEl.innerHTML = '<div class="status-dot"></div> AGENT READY';
-    statusEl.title = `Project: ${data.projectRoot} | Claude: ${data.claudeEnabled ? 'enabled' : 'disabled'}`;
+    const engines = [];
+    if (data.engines?.code) engines.push('CODE');
+    if (data.engines?.infra) engines.push('INFRA');
+    statusEl.innerHTML = '<div class="status-dot"></div> AGENT READY — ' + engines.join(' + ');
   } catch {
     statusEl.innerHTML = '<div class="status-dot" style="background:var(--danger)"></div> SERVER OFFLINE';
-    statusEl.title = 'Run: node server.js in /workspace/fractia/';
-    statusEl.style.cursor = 'help';
   }
 }
 checkServerStatus();
 
-let currentReportData = null;
-
-async function runAudit() {
-  const appName = document.getElementById('appName').value || 'Mi Aplicación';
-  const appStack = document.getElementById('appStack').value || 'No especificado';
-  const depth = document.getElementById('depth').value;
-  const context = document.getElementById('context').value;
-  const activeModules = [...document.querySelectorAll('.module-chip.active')]
-    .map(c => c.dataset.module);
-
-  if (activeModules.length === 0) {
-    alert('Selecciona al menos un módulo para auditar.');
-    return;
-  }
-
-  // UI state
-  const btn = document.getElementById('runBtn');
-  btn.disabled = true;
-  btn.textContent = '🔍 ANALIZANDO...';
+// ── Shared UI helpers ───────────────────────────────────────────────────────
+function resetOutputUI(isInfra) {
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('scanBadge').classList.add('visible');
+  if (isInfra) document.getElementById('scanBadge').classList.add('infra-badge');
+  else document.getElementById('scanBadge').classList.remove('infra-badge');
   document.getElementById('scanProgress').classList.add('visible');
   document.getElementById('reportContent').classList.remove('visible');
   document.getElementById('reportContent').innerHTML = '';
   document.getElementById('summaryBar').classList.remove('visible');
   document.getElementById('terminalLines').innerHTML = '';
+  document.getElementById('outputTitleText').textContent = isInfra ? 'INFRA AUDIT REPORT' : 'CODE AUDIT REPORT';
+
+  const fill = document.getElementById('progressFill');
+  fill.classList.toggle('infra-fill', isInfra);
   setProgress(0, 'Conectando con el agente...');
+}
 
-  const moduleNames = {
-    auth: 'Autenticación & JWT',
-    api: 'API Endpoints',
-    ddos: 'DDoS & Rate Limiting',
-    sql: 'Inyecciones SQL/NoSQL',
-    xss: 'XSS & CSRF',
-    secrets: 'Secrets & Leaks',
-    headers: 'Headers HTTP & CORS',
-    deps: 'Dependencias',
-    infra: 'Infraestructura',
-    bots: 'Bots & Scraping',
-    crypto: 'Criptografía',
-    logs: 'Logging & Monitoreo'
-  };
+function setProgress(pct, label) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
 
-  // Terminal animation while the local server runs real analysis
+function addTerminalLine(text, isInfra) {
+  const div = document.createElement('div');
+  div.className = 'terminal-line' + (isInfra ? ' infra-line' : '');
+  div.textContent = text;
+  document.getElementById('terminalLines').appendChild(div);
+}
+
+// ── CODE AUDIT ──────────────────────────────────────────────────────────────
+async function runCodeAudit() {
+  const appName = document.getElementById('appName').value || 'Mi Aplicacion';
+  const appStack = document.getElementById('appStack').value || 'No especificado';
+  const depth = document.getElementById('depth').value;
+  const context = document.getElementById('context').value;
+  const activeModules = [...document.querySelectorAll('#codeModulesGrid .module-chip.active')]
+    .map(c => c.dataset.module);
+
+  if (activeModules.length === 0) {
+    alert('Selecciona al menos un modulo para auditar.');
+    return;
+  }
+
+  const btn = document.getElementById('runCodeBtn');
+  btn.disabled = true;
+  btn.textContent = 'ANALIZANDO...';
+  resetOutputUI(false);
+
   const terminals = [
-    'Inicializando motor de análisis estático...',
-    `Escaneando archivos fuente del proyecto...`,
-    `Analizando ${activeModules.length} módulos de seguridad...`,
-    'Inspeccionando middleware de autenticación...',
-    'Verificando configuración de headers y CORS...',
+    'Inicializando motor de analisis estatico...',
+    'Escaneando archivos fuente del proyecto...',
+    `Analizando ${activeModules.length} modulos de seguridad...`,
+    'Inspeccionando middleware de autenticacion...',
+    'Verificando configuracion de headers y CORS...',
     'Buscando secretos y credenciales expuestas...',
     'Compilando hallazgos confirmados...'
   ];
@@ -831,14 +1041,14 @@ async function runAudit() {
   let termIdx = 0;
   const termInterval = setInterval(() => {
     if (termIdx < terminals.length) {
-      addTerminalLine(terminals[termIdx]);
+      addTerminalLine(terminals[termIdx], false);
       setProgress(Math.round((termIdx / terminals.length) * 60), terminals[termIdx]);
       termIdx++;
     }
   }, 700);
 
   try {
-    const response = await fetch('http://localhost:7777/api/audit', {
+    const response = await fetch('/api/audit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ modules: activeModules, depth, appName, appStack, context })
@@ -852,17 +1062,16 @@ async function runAudit() {
     }
 
     setProgress(80, 'Procesando resultados...');
-    addTerminalLine('Análisis estático completado. Generando reporte...');
+    addTerminalLine('Analisis estatico completado. Generando reporte...', false);
 
     const report = await response.json();
-
     currentReportData = report;
     setProgress(100, 'Listo.');
 
     setTimeout(() => {
       document.getElementById('terminalLines').innerHTML = '';
       document.getElementById('scanProgress').classList.remove('visible');
-      renderReport(report);
+      renderReport(report, 'code');
     }, 600);
 
   } catch (err) {
@@ -870,53 +1079,128 @@ async function runAudit() {
     document.getElementById('terminalLines').innerHTML = '';
     document.getElementById('scanProgress').classList.remove('visible');
     if (err.message.includes('fetch') || err.message.includes('Failed')) {
-      addTerminalLine('ERROR: No se pudo conectar con el servidor local.');
-      addTerminalLine('→ Asegúrate de que Fractia está corriendo: node server.js');
+      addTerminalLine('ERROR: No se pudo conectar con el servidor local.', false);
+      addTerminalLine('Asegurate de que Fractia esta corriendo: node server.js', false);
     } else {
-      addTerminalLine('ERROR: ' + err.message);
+      addTerminalLine('ERROR: ' + err.message, false);
     }
-    console.error(err);
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ EJECUTAR AUDITORÍA DE SEGURIDAD';
+    btn.textContent = '\u26A1 EJECUTAR AUDITORIA DE CODIGO';
     document.getElementById('scanBadge').classList.remove('visible');
   }
 }
 
-function setProgress(pct, label) {
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressPct').textContent = pct + '%';
-  document.getElementById('progressLabel').textContent = label;
+// ── INFRA AUDIT ─────────────────────────────────────────────────────────────
+async function runInfraAudit() {
+  const activeModules = [...document.querySelectorAll('#infraModulesGrid .module-chip.active-infra')]
+    .map(c => c.dataset.module);
+
+  if (activeModules.length === 0) {
+    alert('Selecciona al menos un modulo de infraestructura.');
+    return;
+  }
+
+  const btn = document.getElementById('runInfraBtn');
+  btn.disabled = true;
+  btn.textContent = 'ESCANEANDO INFRAESTRUCTURA...';
+  resetOutputUI(true);
+
+  const terminals = [
+    'Inicializando IronBase Engine...',
+    'Detectando sistema operativo...',
+    `Ejecutando ${activeModules.length} modulos de infraestructura...`,
+    'Escaneando configuracion SSH...',
+    'Auditando reglas de firewall...',
+    'Verificando permisos del filesystem...',
+    'Analizando usuarios y privilegios...',
+    'Evaluando exposicion de red...',
+    'Compilando hallazgos de infraestructura...'
+  ];
+
+  let termIdx = 0;
+  const termInterval = setInterval(() => {
+    if (termIdx < terminals.length) {
+      addTerminalLine(terminals[termIdx], true);
+      setProgress(Math.round((termIdx / terminals.length) * 60), terminals[termIdx]);
+      termIdx++;
+    }
+  }, 900);
+
+  try {
+    const response = await fetch('/api/infra-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modules: activeModules })
+    });
+
+    clearInterval(termInterval);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(err.error || `Server error: ${response.status}`);
+    }
+
+    setProgress(80, 'Procesando resultados de infraestructura...');
+    addTerminalLine('IronBase scan completado. Generando reporte...', true);
+
+    const report = await response.json();
+    currentReportData = report;
+    setProgress(100, 'Listo.');
+
+    setTimeout(() => {
+      document.getElementById('terminalLines').innerHTML = '';
+      document.getElementById('scanProgress').classList.remove('visible');
+      renderReport(report, 'infra');
+    }, 600);
+
+  } catch (err) {
+    clearInterval(termInterval);
+    document.getElementById('terminalLines').innerHTML = '';
+    document.getElementById('scanProgress').classList.remove('visible');
+    if (err.message.includes('fetch') || err.message.includes('Failed')) {
+      addTerminalLine('ERROR: No se pudo conectar con el servidor local.', true);
+      addTerminalLine('Asegurate de que Fractia esta corriendo: node server.js', true);
+    } else {
+      addTerminalLine('ERROR: ' + err.message, true);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '\u2699 EJECUTAR AUDITORIA DE INFRAESTRUCTURA';
+    document.getElementById('scanBadge').classList.remove('visible');
+  }
 }
 
-function addTerminalLine(text) {
-  const div = document.createElement('div');
-  div.className = 'terminal-line';
-  div.textContent = text;
-  document.getElementById('terminalLines').appendChild(div);
-}
-
-function renderReport(report) {
+// ── Render Report (shared for both engines) ─────────────────────────────────
+function renderReport(report, engine) {
   const container = document.getElementById('reportContent');
   container.innerHTML = '';
 
   let critical = 0, high = 0, medium = 0, low = 0;
+  const isInfra = engine === 'infra';
+  const accentColor = isInfra ? 'var(--infra-accent)' : 'var(--accent)';
 
   // Summary card
   const summaryCard = document.createElement('div');
+  const score = report.risk_score || 50;
+  const scoreColor = score >= 70 ? 'var(--danger)' : score >= 40 ? 'var(--warn)' : 'var(--accent)';
+  const engineLabel = isInfra ? 'INFRA (IRONBASE)' : 'CODE (STATIC + AI)';
   summaryCard.style.cssText = `
-    background: rgba(0,245,160,0.04); border: 1px solid rgba(0,245,160,0.15);
+    background: ${isInfra ? 'rgba(167,139,250,0.04)' : 'rgba(0,245,160,0.04)'};
+    border: 1px solid ${isInfra ? 'rgba(167,139,250,0.15)' : 'rgba(0,245,160,0.15)'};
     border-radius:6px; padding:14px 16px; margin-bottom:16px;
     font-family:var(--font-mono); font-size:12px; color:var(--text); line-height:1.6;
   `;
-  const score = report.risk_score || 50;
-  const scoreColor = score >= 70 ? 'var(--danger)' : score >= 40 ? 'var(--warn)' : 'var(--accent)';
   summaryCard.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <span style="color:var(--accent);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;">▸ RESUMEN EJECUTIVO</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="color:${accentColor};font-size:10px;letter-spacing:0.15em;text-transform:uppercase;">&#9656; RESUMEN EJECUTIVO</span>
+        <span class="engine-tag engine-tag-${engine}">${engineLabel}</span>
+      </div>
       <span style="color:${scoreColor};font-size:20px;font-weight:700;font-family:var(--font-display)">Riesgo: ${score}/100</span>
     </div>
     <div>${report.summary || ''}</div>
+    ${report.meta?.scanDurationMs ? `<div style="margin-top:8px;color:var(--text-dim);font-size:11px;">Duracion: ${(report.meta.scanDurationMs / 1000).toFixed(1)}s</div>` : ''}
   `;
   container.appendChild(summaryCard);
 
@@ -932,7 +1216,7 @@ function renderReport(report) {
     card.className = 'module-result';
 
     const findingsHTML = (mod.findings || []).map(f => {
-      const icon = f.type === 'vulnerability' ? '🔴' : f.type === 'warning' ? '🟡' : 'ℹ️';
+      const icon = f.type === 'vulnerability' ? '\uD83D\uDD34' : f.type === 'warning' ? '\uD83D\uDFE1' : '\u2139\uFE0F';
       const cveTag = f.cve ? `<span class="code">${f.cve}</span> ` : '';
       const codeEx = f.code_example ? `<div style="margin-top:6px;padding:8px;background:rgba(0,0,0,0.3);border-radius:4px;font-size:11px;color:#7c9cbf;overflow-x:auto;white-space:pre-wrap">${escapeHTML(f.code_example)}</div>` : '';
       return `
@@ -946,30 +1230,32 @@ function renderReport(report) {
       `;
     }).join('');
 
-    const recsHTML = (mod.recommendations || []).map((r, i) =>
-      `<div style="margin-bottom:4px"><span style="color:var(--accent)">→</span> ${r}</div>`
+    const recsHTML = (mod.recommendations || []).map(r =>
+      `<div style="margin-bottom:4px"><span style="color:${accentColor}">\u2192</span> ${r}</div>`
     ).join('');
+
+    const recClass = isInfra ? 'rec-box infra-rec' : 'rec-box';
 
     card.innerHTML = `
       <div class="module-result-header" onclick="toggleModule(this)">
         <div class="module-result-left">
           <span class="severity-badge severity-${sev}">${sev.toUpperCase()}</span>
           <span class="module-name">${mod.name || mod.id}</span>
+          <span class="engine-tag engine-tag-${engine}">${isInfra ? 'INFRA' : 'CODE'}</span>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
           <span class="module-score">Score: ${mod.score || '?'}/100</span>
-          <span style="color:var(--text-dim);font-size:16px">▾</span>
+          <span style="color:var(--text-dim);font-size:16px">\u25BE</span>
         </div>
       </div>
       <div class="module-result-body">
         ${findingsHTML}
-        ${recsHTML ? `<div class="rec-box"><strong>RECOMENDACIONES</strong><br><br>${recsHTML}</div>` : ''}
+        ${recsHTML ? `<div class="${recClass}"><strong>RECOMENDACIONES</strong><br><br>${recsHTML}</div>` : ''}
       </div>
     `;
 
     container.appendChild(card);
 
-    // Auto-open critical/high
     if (sev === 'critical' || sev === 'high') {
       setTimeout(() => {
         card.querySelector('.module-result-body').classList.add('open');
@@ -984,6 +1270,13 @@ function renderReport(report) {
   document.getElementById('statHigh').textContent = high;
   document.getElementById('statMedium').textContent = medium;
   document.getElementById('statLow').textContent = low;
+
+  const engineIndicator = document.getElementById('engineIndicator');
+  const engineTag = document.getElementById('engineTag');
+  engineIndicator.style.display = 'flex';
+  engineTag.className = `engine-tag engine-tag-${engine}`;
+  engineTag.textContent = isInfra ? 'IRONBASE ENGINE' : 'CODE ENGINE';
+
   document.getElementById('summaryBar').classList.add('visible');
 }
 
@@ -998,11 +1291,12 @@ function escapeHTML(str) {
 
 function exportReport() {
   if (!currentReportData) return;
+  const engine = currentReportData.meta?.engine || 'unknown';
   const blob = new Blob([JSON.stringify(currentReportData, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'fractia_security_audit.json';
+  a.download = `fractia_${engine}_audit.json`;
   a.click();
 }
 </script>

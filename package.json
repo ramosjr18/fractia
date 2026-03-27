@@ -1,7 +1,7 @@
 {
   "name": "fractia",
-  "version": "1.0.0",
-  "description": "Real static security audit tool for Node.js/Express projects",
+  "version": "3.0.0",
+  "description": "Full-stack security platform — code audit + infrastructure hardening (IronBase engine)",
   "type": "module",
   "main": "server.js",
   "scripts": {
