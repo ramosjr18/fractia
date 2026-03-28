@@ -23,6 +23,9 @@ import { isIronbaseAvailable } from './engines/ironbaseRunner.js';
 import { runCodeAudit, ALL_MODULES } from './engines/codeAudit.js';
 import { runInfraScan }        from './engines/ironbaseRunner.js';
 import { runMobileAudit, MOBILE_MODULES, isMobileProject } from './engines/flutterRunner.js';
+import { runAutoFix }   from './engines/autoFix.js';
+import { reviewPR }     from './engines/prReviewer.js';
+import { parseRepo }    from './utils/githubClient.js';
 
 import { logo, divider, box, link, t, colors } from './cli/theme.js';
 import { selectProject, addToHistory }          from './cli/projectSelector.js';
@@ -137,6 +140,8 @@ async function mainMenu() {
   console.log(t.option('[2]', `Infra Audit         ${ironbase ? colors.dim('IronBase listo') : chalk.hex('#ff2d55')('IronBase no disponible')}`));
   console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('recon · spike-test · slowloris · bots-stuffing · form-flood')}`));
   console.log(t.option('[4]', `Mobile Audit  ${chalk.hex('#34d399').bold('Flutter')}  ${colors.dim('10 módulos · auth · crypto · network · storage · …')}`));
+  console.log(t.option('[5]', `Auto-Fix      ${chalk.hex('#c084fc').bold('AI')}         ${colors.dim('corrige critical/high · crea branch · abre PR')}`));
+  console.log(t.option('[6]', `Review PR     ${chalk.hex('#38bdf8').bold('Shift-Left')} ${colors.dim('audita un PR de GitHub antes del merge')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -150,6 +155,8 @@ async function mainMenu() {
     case '2': return infraAuditFlow();
     case '3': return attackFlow();
     case '4': return mobileAuditFlow();
+    case '5': return autoFixFlow();
+    case '6': return reviewPRFlow();
     case 'c': return configMenu();
     case 's': return serveFlow();
     case 'p': return changeProjectFlow();
@@ -579,6 +586,261 @@ async function mobileAuditFlow() {
   return mainMenu();
 }
 
+// ── GitHub token helper ───────────────────────────────────────────────────────
+async function ensureGitHubToken() {
+  if (config.githubToken) return config.githubToken;
+
+  const { readFileSync, writeFileSync } = await import('fs');
+  function saveToEnv(key, value) {
+    const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '.env');
+    let content = '';
+    try { content = readFileSync(envPath, 'utf8'); } catch {}
+    const lines = content.split('\n');
+    const idx = lines.findIndex(l => l.startsWith(`${key}=`));
+    if (idx >= 0) lines[idx] = `${key}=${value}`; else lines.push(`${key}=${value}`);
+    writeFileSync(envPath, lines.join('\n'), 'utf8');
+  }
+
+  console.log('');
+  console.log(`  ${colors.dim('Se necesita un GitHub Personal Access Token con permisos')}`);
+  console.log(`  ${colors.dim('repo (read + write pull requests).')}`);
+  console.log(`  ${colors.dim('Generarlo en: github.com → Settings → Developer settings → PAT')}`);
+  console.log('');
+  const token = await ask(colors.accent2('  ▸ ') + colors.text('GITHUB_TOKEN: '));
+  if (!token) return null;
+  config.githubToken = token;
+  saveToEnv('GITHUB_TOKEN', token);
+  return token;
+}
+
+// ── Auto-Fix flow (Pilar E) ───────────────────────────────────────────────────
+async function autoFixFlow() {
+  clearScreen();
+  printHeader();
+
+  console.log('');
+  console.log(`  ${chalk.hex('#c084fc').bold('Auto-Fix')}  ${colors.dim('— AI Remediation Agent')}`);
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  if (!config.anthropicApiKey && !config.openaiApiKey) {
+    console.log(`  ${chalk.hex('#ff2d55')('✗')} Auto-Fix requiere IA. Configura primero un proveedor desde ${colors.dim('[c] Configuración')}.`);
+    console.log('');
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  // GitHub token (optional — fix without PR if absent)
+  const token = await ensureGitHubToken();
+  let githubRepo = null;
+  if (token) {
+    const repoAns = await ask(colors.accent2('  ▸ ') + colors.text('Repo GitHub [owner/repo] (Enter para omitir PR): '));
+    if (repoAns && repoAns.includes('/')) githubRepo = repoAns.trim();
+  }
+
+  console.log('');
+  console.log(`  ${colors.dim('Ejecutando Code Audit para identificar vulnerabilidades…')}`);
+  console.log('');
+
+  // Run audit keeping raw results (with _codeSnippets)
+  const { ALL_MODULES: allMods } = await import('./engines/codeAudit.js');
+  const AUDITORS_RAW = {
+    auth:    () => import('./auditors/auth.js'),
+    api:     () => import('./auditors/api.js'),
+    sql:     () => import('./auditors/sql.js'),
+    xss:     () => import('./auditors/xss.js'),
+    secrets: () => import('./auditors/secrets.js'),
+    headers: () => import('./auditors/headers.js'),
+    bots:    () => import('./auditors/bots.js'),
+    crypto:  () => import('./auditors/crypto.js'),
+    logs:    () => import('./auditors/logs.js'),
+  };
+
+  const rawResults = [];
+  let modIdx = 0;
+  const modTotal = Object.keys(AUDITORS_RAW).length;
+  for (const [mod, loader] of Object.entries(AUDITORS_RAW)) {
+    process.stdout.write(`  ${colors.dim(`[${String(++modIdx).padStart(2)}/${modTotal}]`)} ${colors.accent('◌')} ${mod}…\r`);
+    try {
+      const { audit } = await loader();
+      const result = await audit('standard');
+      process.stdout.write('\x1b[2K');
+      const sev = result.severity;
+      const col = sev === 'critical' ? chalk.hex('#ff2d55') : sev === 'high' ? chalk.hex('#ff9f1c') : chalk.hex('#34d399');
+      console.log(`  ${colors.dim(`[${String(modIdx).padStart(2)}/${modTotal}]`)} ${col(sev === 'ok' ? '✓' : sev === 'critical' ? '✗' : '!')} ${mod}  ${colors.dim(result.findings.length + ' findings')}`);
+      rawResults.push(result);
+    } catch (e) {
+      process.stdout.write('\x1b[2K');
+      console.log(`  ${colors.dim(`[${String(modIdx).padStart(2)}/${modTotal}]`)} ${chalk.hex('#ff2d55')('✗')} ${mod}  ${colors.dim('error: ' + e.message)}`);
+    }
+  }
+
+  const fixable = rawResults.filter(r => ['critical', 'high'].includes(r.severity));
+  console.log('');
+
+  if (fixable.length === 0) {
+    console.log(`  ${chalk.hex('#34d399')('✓')} Sin hallazgos critical/high con archivos referenciados. Nada que corregir automáticamente.`);
+    console.log('');
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  console.log(`  ${chalk.hex('#c084fc')('▸')} ${fixable.length} módulo(s) con severidad critical/high. Enviando a IA para corrección…`);
+  console.log('');
+
+  const SEV_COLOR = { critical: chalk.hex('#ff2d55').bold, high: chalk.hex('#ff9f1c').bold };
+
+  const fixResult = await runAutoFix({
+    rawResults,
+    projectRoot: config.projectRoot,
+    githubRepo,
+    githubToken: token,
+    hooks: {
+      onFileStart:   ({ file, count }) => process.stdout.write(`  ${chalk.hex('#c084fc')('◌')} Corrigiendo ${colors.text(file)}  ${colors.dim(count + ' findings')}…\r`),
+      onFileFixed:   ({ file })        => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#34d399')('✓')} ${colors.text(file)}  ${colors.dim('corregido')}`); },
+      onFileFailed:  ({ file, error }) => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#ff2d55')('✗')} ${colors.text(file)}  ${colors.dim(error)}`); },
+      onCommit:      ({ branch })      => console.log(`\n  ${chalk.hex('#c084fc')('▸')} Branch creado: ${colors.accent(branch)}`),
+      onPR:          ({ url })         => console.log(`  ${chalk.hex('#c084fc')('▸')} PR abierto:    ${chalk.hex('#38bdf8').underline(url)}`),
+      onPushFailed:  ({ error })       => console.log(`  ${chalk.hex('#ff9f1c')('!')} Push falló: ${colors.dim(error)}`),
+      onSkip:        ({ reason })      => console.log(`  ${colors.dim('ℹ')} ${reason}`),
+    },
+  });
+
+  console.log('');
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  if (fixResult.fixedFiles.length > 0) {
+    console.log(`  ${chalk.hex('#34d399')('✓')} ${fixResult.fixedFiles.length} archivo(s) corregido(s)`);
+    if (fixResult.failedFiles.length > 0) {
+      console.log(`  ${chalk.hex('#ff9f1c')('!')} ${fixResult.failedFiles.length} archivo(s) no pudieron corregirse`);
+    }
+    if (fixResult.branchName) {
+      console.log(`  ${colors.dim('branch')}  ${colors.accent(fixResult.branchName)}`);
+    }
+    if (fixResult.prUrl) {
+      console.log(`  ${colors.dim('PR')}      ${chalk.hex('#38bdf8').underline(fixResult.prUrl)}`);
+    } else if (fixResult.branchName && !githubRepo) {
+      console.log(`  ${colors.dim('Sin token/repo → ejecuta: git push origin ' + fixResult.branchName)}`);
+    }
+  } else {
+    console.log(`  ${chalk.hex('#ff9f1c')('!')} No se pudo corregir ningún archivo automáticamente.`);
+    if (fixResult.failedFiles.length > 0) {
+      for (const f of fixResult.failedFiles) console.log(`    ${colors.dim('•')} ${f.file}: ${f.error}`);
+    }
+  }
+
+  console.log('');
+  await ask(colors.dim('  Enter para volver al menú... '));
+  return mainMenu();
+}
+
+// ── Review PR flow (Pilar F: Shift-Left) ─────────────────────────────────────
+async function reviewPRFlow() {
+  clearScreen();
+  printHeader();
+
+  console.log('');
+  console.log(`  ${chalk.hex('#38bdf8').bold('Review PR')}  ${colors.dim('— Shift-Left Security Gate')}`);
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  const token = await ensureGitHubToken();
+  if (!token) {
+    console.log(`  ${chalk.hex('#ff2d55')('✗')} Se necesita un GitHub token para auditar PRs.`);
+    console.log('');
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  const repoAns = await ask(colors.accent2('  ▸ ') + colors.text('Repo [owner/repo]: '));
+  if (!repoAns || !repoAns.includes('/')) {
+    console.log(`  ${chalk.hex('#ff2d55')('✗')} Formato inválido. Usa owner/repo.`);
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  const prAns = await ask(colors.accent2('  ▸ ') + colors.text('Número de PR: '));
+  const prNumber = parseInt(prAns, 10);
+  if (!prNumber) {
+    console.log(`  ${chalk.hex('#ff2d55')('✗')} Número de PR inválido.`);
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  const dryAns = await ask(colors.accent2('  ▸ ') + colors.text('¿Publicar review en GitHub? [S/n]: '));
+  const postReview = dryAns.trim().toLowerCase() !== 'n';
+
+  clearScreen();
+  printHeader();
+  console.log('');
+  console.log(`  ${chalk.hex('#38bdf8').bold('Review PR')}  ${colors.dim(`→ ${repoAns} #${prNumber}`)}`);
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  const SEV_COLOR = {
+    critical: chalk.hex('#ff2d55').bold,
+    high: chalk.hex('#ff9f1c').bold,
+    medium: chalk.hex('#ffd60a'),
+    low: chalk.hex('#48cae4'),
+    ok: chalk.hex('#34d399'),
+  };
+
+  let reviewResult;
+  try {
+    reviewResult = await reviewPR({
+      repo:        repoAns.trim(),
+      prNumber,
+      githubToken: token,
+      postReview,
+      hooks: {
+        onInfo: ({ title, author, files, auditing, note }) => {
+          if (note) { console.log(`  ${colors.dim(note)}`); return; }
+          console.log(`  ${colors.dim('PR')}     ${colors.text(title)}`);
+          console.log(`  ${colors.dim('autor')}  ${colors.accent(author)}  ${colors.dim(`${files} archivos · ${auditing} auditables`)}`);
+          console.log('');
+        },
+        onFileDownloaded: ({ file }) => process.stdout.write(`  ${colors.dim('↓')} ${file}\r`),
+        onModuleComplete: ({ mod, result, ms }) => {
+          const sev = result.severity;
+          const col = SEV_COLOR[sev] || (x => x);
+          const cnt = result.findings.length;
+          process.stdout.write('\x1b[2K');
+          console.log(
+            `  ${col(sev === 'ok' ? '✓' : sev === 'critical' ? '✗' : '!')} ${colors.text(mod).padEnd(12)}` +
+            `${colors.dim(cnt > 0 ? cnt + ' findings' : 'limpio')}  ${colors.dim(ms + 'ms')}`
+          );
+        },
+        onReviewPosted: ({ url, event }) => {
+          console.log('');
+          const icon = event === 'REQUEST_CHANGES' ? chalk.hex('#ff2d55')('✗') : chalk.hex('#34d399')('✓');
+          console.log(`  ${icon} Review publicado: ${event}`);
+          console.log(`  ${chalk.hex('#38bdf8').underline(url)}`);
+        },
+      },
+    });
+  } catch (err) {
+    console.log('');
+    console.log(`  ${chalk.hex('#ff2d55')('✗ Error:')} ${err.message}`);
+    console.log('');
+    await ask(colors.dim('  Enter para volver... '));
+    return mainMenu();
+  }
+
+  console.log('');
+  console.log(`  ${divider(52)}`);
+  console.log('');
+  const wCol = SEV_COLOR[reviewResult.worstSeverity] || (x => x);
+  console.log(`  ${colors.dim('Peor severidad')}  ${wCol.bold(reviewResult.worstSeverity)}`);
+  console.log(`  ${colors.dim('Risk score')}      ${wCol.bold(reviewResult.riskScore + '/100')}`);
+  console.log(`  ${colors.dim('Veredicto')}       ${wCol.bold(reviewResult.reviewEvent)}`);
+  if (!postReview) console.log(`  ${colors.dim('(dry-run — review no publicado)')}`);
+  console.log('');
+
+  await ask(colors.dim('  Enter para volver al menú... '));
+  return mainMenu();
+}
+
 // ── Attack flow (Pilar C: DAST) ───────────────────────────────────────────────
 async function attackFlow() {
   clearScreen();
@@ -606,6 +868,54 @@ async function main() {
   }
 
   // fractia attack --target URL --profile PROFILE [--login-path PATH ...]
+  // fractia review-pr --repo owner/repo --pr NUMBER [--dry-run]
+  if (cliArg === 'review-pr') {
+    const argv     = process.argv.slice(3);
+    const getFlag  = (flag) => { const i = argv.indexOf(flag); return i !== -1 ? argv[i + 1] : undefined; };
+    const hasFlag  = (flag) => argv.includes(flag);
+    const repo     = getFlag('--repo');
+    const prNum    = getFlag('--pr') ? parseInt(getFlag('--pr'), 10) : NaN;
+    const dryRun   = hasFlag('--dry-run');
+    const token    = getFlag('--token') || config.githubToken;
+
+    if (!repo || !prNum) {
+      console.log('');
+      console.log(t.fail('Uso: fractia review-pr --repo owner/repo --pr NUMBER [--token TOKEN] [--dry-run]'));
+      console.log('');
+      process.exit(1);
+    }
+    if (!token) {
+      console.log('');
+      console.log(t.fail('Se requiere GITHUB_TOKEN en .env o --token TOKEN'));
+      console.log('');
+      process.exit(1);
+    }
+
+    console.log(`  ${chalk.hex('#38bdf8')('▸')} Auditando PR #${prNum} en ${repo}…`);
+    console.log('');
+    try {
+      const { reviewPR: _reviewPR } = await import('./engines/prReviewer.js');
+      const result = await _reviewPR({
+        repo, prNumber: prNum, githubToken: token, postReview: !dryRun,
+        hooks: {
+          onInfo:           ({ title, author, files, auditing }) => title && console.log(`  PR: ${title} by ${author} — ${auditing}/${files} archivos auditables`),
+          onFileDownloaded: ({ file }) => process.stdout.write(`  ↓ ${file}\r`),
+          onModuleComplete: ({ mod, result: r }) => {
+            process.stdout.write('\x1b[2K');
+            console.log(`  ${r.severity === 'ok' ? '✓' : '!'} ${mod}  ${r.findings.length} findings`);
+          },
+          onReviewPosted:   ({ url, event }) => console.log(`\n  Review: ${event}\n  ${url}`),
+        },
+      });
+      console.log('');
+      console.log(`  Risk score: ${result.riskScore}/100  |  Veredicto: ${result.reviewEvent}`);
+      process.exit(result.reviewEvent === 'REQUEST_CHANGES' ? 1 : 0); // CI-friendly exit code
+    } catch (err) {
+      console.log(t.fail(err.message));
+      process.exit(1);
+    }
+  }
+
   if (cliArg === 'attack') {
     const argv = process.argv.slice(3);
     const getFlag = (flag) => {

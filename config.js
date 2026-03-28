@@ -31,6 +31,7 @@ export const config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   aiProvider: process.env.AI_PROVIDER || '',   // 'claude' | 'openai' | 'none' — set at runtime
+  githubToken: process.env.GITHUB_TOKEN || '',
 };
 
 // No longer throws on missing PROJECT_ROOT — handled interactively by server.js

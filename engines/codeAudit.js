@@ -8,22 +8,24 @@ import { enrichWithOpenAI } from '../utils/openaiClient.js';
 export const ALL_MODULES = [
   'auth', 'api', 'ddos', 'sql', 'xss', 'secrets',
   'headers', 'deps', 'infra', 'bots', 'crypto', 'logs', 'nextjs',
+  'gitHistory',
 ];
 
 const AUDITORS = {
-  auth:    () => import('../auditors/auth.js'),
-  api:     () => import('../auditors/api.js'),
-  ddos:    () => import('../auditors/ddos.js'),
-  sql:     () => import('../auditors/sql.js'),
-  xss:     () => import('../auditors/xss.js'),
-  secrets: () => import('../auditors/secrets.js'),
-  headers: () => import('../auditors/headers.js'),
-  deps:    () => import('../auditors/deps.js'),
-  infra:   () => import('../auditors/infra.js'),
-  bots:    () => import('../auditors/bots.js'),
-  crypto:  () => import('../auditors/crypto.js'),
-  logs:    () => import('../auditors/logs.js'),
-  nextjs:  () => import('../auditors/nextjs.js'),
+  auth:       () => import('../auditors/auth.js'),
+  api:        () => import('../auditors/api.js'),
+  ddos:       () => import('../auditors/ddos.js'),
+  sql:        () => import('../auditors/sql.js'),
+  xss:        () => import('../auditors/xss.js'),
+  secrets:    () => import('../auditors/secrets.js'),
+  headers:    () => import('../auditors/headers.js'),
+  deps:       () => import('../auditors/deps.js'),
+  infra:      () => import('../auditors/infra.js'),
+  bots:       () => import('../auditors/bots.js'),
+  crypto:     () => import('../auditors/crypto.js'),
+  logs:       () => import('../auditors/logs.js'),
+  nextjs:     () => import('../auditors/nextjs.js'),
+  gitHistory: () => import('../auditors/gitHistory.js'),
 };
 
 const WEIGHTS = { critical: 25, high: 15, medium: 7, low: 2, ok: 0 };
