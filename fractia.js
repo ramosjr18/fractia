@@ -5,7 +5,11 @@
  *   fractia                                          → interactive menu
  *   fractia serve                                    → start web UI server
  *   fractia attack --target URL --profile PROFILE    → DAST attack (direct)
- *     Options: --login-path PATH  --requests N  --duration N  --body TEMPLATE
+ *     Profiles: recon | spike-test | slowloris | bots-stuffing | form-flood
+ *     Options:  --login-path PATH  --requests N  --duration N  --body TEMPLATE
+ *               --mode MODE  (form-flood: flood|user-enum|stuffing|spam|inject|all)
+ *               --method GET|POST  (spike-test)
+ *               --form-action URL  --fields "name,email,message"  (form-flood SPA)
  */
 import path from 'path';
 import readline from 'readline';
@@ -18,6 +22,7 @@ import { discoverStructure }   from './utils/fileScanner.js';
 import { isIronbaseAvailable } from './engines/ironbaseRunner.js';
 import { runCodeAudit, ALL_MODULES } from './engines/codeAudit.js';
 import { runInfraScan }        from './engines/ironbaseRunner.js';
+import { runMobileAudit, MOBILE_MODULES, isMobileProject } from './engines/flutterRunner.js';
 
 import { logo, divider, box, link, t, colors } from './cli/theme.js';
 import { selectProject, addToHistory }          from './cli/projectSelector.js';
@@ -130,7 +135,8 @@ async function mainMenu() {
   console.log('');
   console.log(t.option('[1]', `Code Audit          ${colors.dim(`${ALL_MODULES.length} módulos disponibles`)}`));
   console.log(t.option('[2]', `Infra Audit         ${ironbase ? colors.dim('IronBase listo') : chalk.hex('#ff2d55')('IronBase no disponible')}`));
-  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('slowloris · bots-stuffing · form-flood')}`));
+  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('recon · spike-test · slowloris · bots-stuffing · form-flood')}`));
+  console.log(t.option('[4]', `Mobile Audit  ${chalk.hex('#34d399').bold('Flutter')}  ${colors.dim('10 módulos · auth · crypto · network · storage · …')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -143,6 +149,7 @@ async function mainMenu() {
     case '1': return codeAuditFlow();
     case '2': return infraAuditFlow();
     case '3': return attackFlow();
+    case '4': return mobileAuditFlow();
     case 'c': return configMenu();
     case 's': return serveFlow();
     case 'p': return changeProjectFlow();
@@ -360,6 +367,218 @@ async function changeProjectFlow() {
   return mainMenu();
 }
 
+// ── Mobile Audit flow (Pilar D: Flutter/Dart) ────────────────────────────────
+async function mobileAuditFlow() {
+  clearScreen();
+  printHeader();
+
+  console.log('');
+  console.log(`  ${chalk.hex('#34d399').bold('Mobile Audit')}  ${colors.dim('— Flutter/Dart Security Engine')}`);
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  // ── 1. Flutter project path ───────────────────────────────────────────────
+  const defaultRoot = config.projectRoot;
+  const isMobile    = isMobileProject(defaultRoot);
+
+  if (isMobile) {
+    console.log(`  ${colors.dim('Proyecto Flutter detectado:')} ${chalk.hex('#34d399')(path.basename(defaultRoot))}`);
+    console.log('');
+  } else {
+    console.log(`  ${colors.dim('El proyecto actual no parece ser Flutter (falta pubspec.yaml o lib/).')}`);
+    console.log(`  ${colors.dim('Introduce la ruta al proyecto Flutter a analizar:')}`);
+    console.log('');
+  }
+
+  let flutterRoot = defaultRoot;
+  if (!isMobile) {
+    const ans = await ask(colors.accent2('  ▸ ') + colors.text(`Ruta Flutter [${defaultRoot}]: `));
+    if (ans) flutterRoot = path.resolve(ans);
+    if (!isMobileProject(flutterRoot)) {
+      console.log('');
+      console.log(`  ${chalk.hex('#ff2d55')('✗')} No se encontró pubspec.yaml + lib/ en: ${flutterRoot}`);
+      console.log(`  ${colors.dim('Puedes igualmente continuar y los módulos que apliquen reportarán resultados.')}`);
+      console.log('');
+    }
+  }
+
+  // ── 2. Module selection ───────────────────────────────────────────────────
+  const MODULE_GROUPS = [
+    { label: 'Auth & Storage',  mods: ['auth', 'storage'] },
+    { label: 'Red & Crypto',    mods: ['network', 'crypto'] },
+    { label: 'App & Links',     mods: ['platform', 'deeplinks'] },
+    { label: 'Build & Código',  mods: ['deps', 'obfuscation', 'logging', 'state'] },
+  ];
+
+  console.log(`  ${colors.dim('selección de módulos')}`);
+  console.log('');
+
+  let optNum = 1;
+  const groupMap = {};
+  for (const g of MODULE_GROUPS) {
+    console.log(`  ${colors.accent2(g.label)}`);
+    console.log(t.option(`[${optNum}]`, g.mods.join(', ')));
+    groupMap[optNum] = g.mods;
+    optNum++;
+  }
+  console.log('');
+  console.log(t.option(`[${optNum}]`, `Todos los módulos  ${colors.dim(`(${MOBILE_MODULES.length} total)`)}`));
+  groupMap[optNum] = MOBILE_MODULES;
+  console.log('');
+
+  const modAns     = await ask(colors.accent2('  ▸ ') + colors.text(`Módulos [1-${optNum}]: `));
+  const modChoice  = parseInt(modAns, 10);
+  const selectedMods = groupMap[modChoice] || MOBILE_MODULES;
+
+  // ── 3. Live logger ────────────────────────────────────────────────────────
+  clearScreen();
+  printHeader();
+  console.log('');
+  console.log(`  ${chalk.hex('#34d399').bold('Mobile Audit')}  ${colors.dim(`→ ${path.basename(flutterRoot)}`)}`);
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  const SEV_COLOR = {
+    critical: chalk.hex('#ff2d55').bold,
+    high:     chalk.hex('#ff9f1c').bold,
+    medium:   chalk.hex('#ffd60a'),
+    low:      chalk.hex('#48cae4'),
+    ok:       chalk.hex('#34d399'),
+  };
+  const SEV_ICON = { critical: '✗', high: '!', medium: '~', low: '·', ok: '✓' };
+
+  const hooks = {
+    onModuleStart({ name, index, total }) {
+      process.stdout.write(
+        `  ${colors.dim(`[${String(index + 1).padStart(2)}/${total}]`)} ` +
+        `${colors.accent('◌')} ${colors.text(name)}…\r`
+      );
+    },
+    onModuleComplete({ name, result, index, total, ms }) {
+      const sev  = result.severity || 'ok';
+      const icon = SEV_ICON[sev] || '·';
+      const col  = SEV_COLOR[sev] || (x => x);
+      const cnt  = result.findings?.length || 0;
+      const fStr = cnt > 0 ? colors.dim(` — ${cnt} hallazgo${cnt > 1 ? 's' : ''}`) : '';
+      process.stdout.write('\x1b[2K'); // clear line
+      console.log(
+        `  ${colors.dim(`[${String(index + 1).padStart(2)}/${total}]`)} ` +
+        `${col(icon)} ${colors.text(name)}${fStr}  ${colors.dim(`${ms}ms`)}`
+      );
+    },
+  };
+
+  let auditResult;
+  try {
+    auditResult = await runMobileAudit(selectedMods, flutterRoot, hooks);
+  } catch (err) {
+    console.log('');
+    console.log(`  ${chalk.hex('#ff2d55')('✗ Error ejecutando Mobile Audit:')} ${err.message}`);
+    console.log(`  ${colors.dim(err.stack?.split('\n')[1] || '')}`);
+    console.log('');
+    await ask(colors.dim('  Enter para volver al menú... '));
+    return mainMenu();
+  }
+
+  // ── 4. Summary ────────────────────────────────────────────────────────────
+  const { worstSeverity, totalFindings, counts, riskScore, dartFilesScanned } = auditResult;
+
+  console.log('');
+  console.log(`  ${divider(52)}`);
+  console.log('');
+
+  // Risk score bar
+  const barLen  = 30;
+  const filled  = Math.round((riskScore / 100) * barLen);
+  const barCol  = riskScore >= 70 ? chalk.hex('#ff2d55') : riskScore >= 40 ? chalk.hex('#ff9f1c') : chalk.hex('#34d399');
+  const bar     = barCol('█'.repeat(filled)) + colors.dim('░'.repeat(barLen - filled));
+  console.log(`  ${colors.dim('Risk Score')}  ${bar}  ${barCol.bold(riskScore + '/100')}`);
+  console.log('');
+
+  // Severity counts
+  const sevLine = ['critical', 'high', 'medium', 'low', 'ok']
+    .filter(s => (counts[s] || 0) > 0)
+    .map(s => `${SEV_COLOR[s](SEV_ICON[s])} ${SEV_COLOR[s](s)} ${colors.dim('×' + counts[s])}`)
+    .join('   ');
+  if (sevLine) console.log(`  ${sevLine}`);
+  console.log('');
+  console.log(`  ${colors.dim('Archivos Dart escaneados:')} ${chalk.hex('#a78bfa')(dartFilesScanned)}`);
+  console.log(`  ${colors.dim('Hallazgos totales:')}       ${totalFindings > 0 ? chalk.hex('#ff9f1c').bold(totalFindings) : chalk.hex('#34d399').bold(totalFindings)}`);
+  console.log('');
+
+  // ── 5. Findings detail ────────────────────────────────────────────────────
+  const outputMode = store.get('outputMode');
+
+  if (outputMode === 'expanded') {
+    for (const r of auditResult.results) {
+      if (!r.findings?.length) continue;
+      const sev = r.severity || 'ok';
+      console.log(`  ${SEV_COLOR[sev].bold(`[${r.name}]`)}  ${colors.dim(r.summary)}`);
+      for (const f of r.findings) {
+        const fc = SEV_COLOR[f.severity] || (x => x);
+        console.log(`    ${fc(SEV_ICON[f.severity] || '·')} ${fc.bold(f.title)}`);
+        if (f.file)        console.log(`      ${colors.dim('file')}  ${colors.accent(f.file)}${f.line ? colors.dim(':' + f.line) : ''}`);
+        if (f.description) console.log(`      ${colors.dim(f.description)}`);
+        if (f.fix)         console.log(`      ${chalk.hex('#34d399')('fix')}   ${f.fix}`);
+        if (f.cve)         console.log(`      ${colors.dim('ref')}   ${colors.dim(f.cve)}`);
+        if (f.code)        console.log(`      ${colors.dim('›')} ${chalk.hex('#a78bfa')(f.code.trim())}`);
+        console.log('');
+      }
+    }
+  } else {
+    // Compact: one line per finding (critical+high only expanded)
+    for (const r of auditResult.results) {
+      if (!r.findings?.length) continue;
+      for (const f of r.findings) {
+        const fc = SEV_COLOR[f.severity] || (x => x);
+        const loc = f.file ? colors.dim(` — ${f.file}${f.line ? ':' + f.line : ''}`) : '';
+        console.log(`  ${fc(SEV_ICON[f.severity])} ${fc(f.title)}${loc}`);
+        if (['critical', 'high'].includes(f.severity)) {
+          if (f.fix) console.log(`    ${chalk.hex('#34d399')('▸')} ${f.fix}`);
+        }
+      }
+    }
+    console.log('');
+  }
+
+  // ── 6. Save JSON report ───────────────────────────────────────────────────
+  const reportsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'reports');
+  if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
+
+  const ts         = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const projName   = path.basename(flutterRoot);
+  const filename   = `${projName}_mobile_${ts}.json`;
+  const reportPath = path.join(reportsDir, filename);
+
+  const report = {
+    meta: {
+      engine:      'flutter',
+      projectRoot: flutterRoot,
+      modules:     selectedMods,
+      generatedAt: new Date().toISOString(),
+      tool:        'Fractia v3.0.0',
+    },
+    summary: {
+      riskScore,
+      worstSeverity,
+      totalFindings,
+      dartFilesScanned,
+      counts,
+    },
+    risk_score: riskScore,
+    modules: auditResult.results,
+  };
+
+  writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
+  const reportUrl = `file://${reportPath}`;
+  console.log(`  ${chalk.hex('#34d399')('▸')} Reporte guardado  ${link(path.basename(reportPath), reportUrl)}`);
+  console.log(`    ${colors.dim(reportPath)}`);
+  console.log('');
+
+  await ask(colors.dim('  Pulsa Enter para volver al menú... '));
+  return mainMenu();
+}
+
 // ── Attack flow (Pilar C: DAST) ───────────────────────────────────────────────
 async function attackFlow() {
   clearScreen();
@@ -402,7 +621,7 @@ async function main() {
       console.log('');
       process.exit(1);
     }
-    const opts = {
+    const optsRaw = {
       loginPath:    getFlag('--login-path'),
       bodyTemplate: getFlag('--body'),
       mode:         getFlag('--mode'),
@@ -410,7 +629,12 @@ async function main() {
       requests:     getFlag('--requests')   ? parseInt(getFlag('--requests'), 10)   : undefined,
       duration:     getFlag('--duration')   ? parseInt(getFlag('--duration'), 10)   : undefined,
       connections:  getFlag('--connections') ? parseInt(getFlag('--connections'), 10) : undefined,
+      formAction:   getFlag('--form-action'),
+      fields:       getFlag('--fields'),
+      method:       getFlag('--method'),
     };
+    // Strip undefined values so engine defaults (meta.defaultOpts) are not overridden
+    const opts = Object.fromEntries(Object.entries(optsRaw).filter(([, v]) => v !== undefined));
     await runAttackCLI({ target, profile, opts });
     process.exit(0);
   }

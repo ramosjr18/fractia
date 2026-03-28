@@ -74,21 +74,32 @@ const MESSAGES  = [
 export async function run({ target, opts = {}, hooks = {} }) {
   const { mode, requests, concurrency, duration, formIndex = 0 } = { ...meta.defaultOpts, ...opts };
 
-  // Step 1: Discover the form
-  hooks.onPhase?.('discover', `GET ${target}`);
-  const discovery = await discoverForm(target, formIndex);
+  let discovery;
 
-  if (!discovery.form) {
-    return {
-      profile: 'form-flood', target, mode,
-      severity: 'low',
-      verdict: `No se encontró ningún formulario en ${target}`,
-      stats: { formsFound: discovery.formsFound },
-      recommendations: ['Verifica la URL — puede requerir autenticación o ser una SPA.'],
-    };
+  // Manual override for SPA / JavaScript-rendered forms
+  if (opts.formAction && opts.fields) {
+    discovery = buildManualDiscovery({ formAction: opts.formAction, fields: opts.fields, pageUrl: target, method: opts.method || 'POST' });
+    hooks.onFormFound?.({ ...discovery, manual: true });
+  } else {
+    // Step 1: Discover the form via static HTML GET
+    hooks.onPhase?.('discover', `GET ${target}`);
+    discovery = await discoverForm(target, formIndex);
+
+    if (!discovery.form) {
+      return {
+        profile: 'form-flood', target, mode,
+        severity: 'low',
+        verdict: `No se encontró ningún formulario en ${target}`,
+        stats: { formsFound: discovery.formsFound },
+        recommendations: [
+          'Verifica la URL — puede requerir autenticación o ser una SPA.',
+          'Si el formulario es JavaScript (React/Next.js), usa --form-action y --fields para indicar el endpoint y los campos directamente.',
+        ],
+      };
+    }
+
+    hooks.onFormFound?.(discovery);
   }
-
-  hooks.onFormFound?.(discovery);
 
   // Step 2: Run the selected mode
   switch (mode) {
@@ -99,6 +110,40 @@ export async function run({ target, opts = {}, hooks = {} }) {
     case 'inject':   return runInject({ target, discovery, hooks });
     default: throw new Error(`Modo desconocido: ${mode}. Opciones: ${meta.modes.join(', ')}`);
   }
+}
+
+// ── Manual discovery for SPA forms ───────────────────────────────────────────
+function buildManualDiscovery({ formAction, fields, pageUrl, method = 'POST' }) {
+  // fields: comma-separated list of field names, e.g. "name,email,message"
+  // or JSON object e.g. '{"name":"text","email":"email","message":"textarea"}'
+  let parsedFields;
+  try {
+    parsedFields = JSON.parse(fields);
+  } catch {
+    // treat as comma-separated names, default type to 'text'
+    parsedFields = Object.fromEntries(fields.split(',').map(f => [f.trim(), 'text']));
+  }
+
+  const form = Object.entries(parsedFields).map(([name, type]) => ({
+    name,
+    type: type || 'text',
+    value: '',
+    isToken: false,
+  }));
+  form._action = formAction;
+  form._method = method.toUpperCase();
+
+  return {
+    form,
+    formIndex: 0,
+    formsFound: 1,
+    actionUrl: formAction,
+    method:    method.toUpperCase(),
+    csrfField: null,
+    csrfValue: '',
+    cookies:   [],
+    pageUrl,
+  };
 }
 
 // ── Mode: FLOOD ───────────────────────────────────────────────────────────────
@@ -209,8 +254,12 @@ async function runStuffing({ target, discovery, requests, concurrency, duration,
     const batch = Math.min(concurrency, requests - i);
     await Promise.all(Array.from({ length: batch }, async (_, j) => {
       if (stopped) return;
-      // Always re-fetch CSRF token (tokens are single-use in most frameworks)
-      const disc = await discoverForm(target, discovery.formIndex);
+      // Re-fetch CSRF token if the form has one (single-use tokens); fall back to original if SPA
+      let disc = discovery;
+      if (discovery.csrfField) {
+        const fresh = await discoverForm(target, discovery.formIndex);
+        if (fresh.form) disc = fresh;
+      }
       const body = buildBody(disc.form, disc.csrfValue, {
         email:    EMAILS[(i + j) % EMAILS.length],
         password: PASSWORDS[(i + j) % PASSWORDS.length],
@@ -312,7 +361,7 @@ async function runInject({ target, discovery, hooks }) {
     verdict  = 'REVISAR — el servidor devuelve 5xx ante ciertos payloads (posible error no controlado).';
     severity = 'high';
   } else {
-    verdict  = `RESILIENTE — ${allPayloads.length} payloads probados, ninguno reflejado ni errores SQL.`;
+    verdict  = `RESILIENTE — ${results.length} payloads probados en ${fields.length} campos, ninguno reflejado ni errores SQL.`;
     severity = 'ok';
   }
 
@@ -541,8 +590,16 @@ function buildVerdict(mode, target, stats, discovery) {
     ? Math.round(stats.responseTimesMs.reduce((a, b) => a + b, 0) / stats.responseTimesMs.length) : 0;
 
   let verdict, severity;
-  if (stats.firstBlock && stats.firstBlock <= 10) {
-    verdict  = `RESILIENTE — rate limiting activo desde el envío #${stats.blocked}.`;
+
+  // If nothing was sent (all errors/timeouts or SPA form), result is inconclusive
+  if (stats.sent === 0 || (stats.errors > 0 && stats.errors === stats.sent)) {
+    const detail = stats.errors > 0
+      ? `${stats.errors} errores de red — el endpoint puede requerir autenticación o ser dinámico (SPA/fetch).`
+      : 'No se pudo enviar ningún request. El formulario puede ser controlado por JavaScript (SPA).';
+    verdict  = `INCONCLUSO — ${detail}`;
+    severity = 'low';
+  } else if (stats.firstBlock && stats.firstBlock <= 10) {
+    verdict  = `RESILIENTE — rate limiting activo desde el envío #${stats.firstBlock}.`;
     severity = 'ok';
   } else if (ratio > 0.6) {
     verdict  = `PARCIAL — ${Math.round(ratio * 100)}% de envíos bloqueados. Umbral mejorable.`;
@@ -551,7 +608,7 @@ function buildVerdict(mode, target, stats, discovery) {
     verdict  = `TARDÍO — bloqueo tardío o inconsistente (${Math.round(ratio * 100)}% bloqueados).`;
     severity = 'high';
   } else {
-    verdict  = `VULNERABLE — ${stats.sent} envíos sin ningún bloqueo. Sin rate limiting en el formulario.`;
+    verdict  = `VULNERABLE — ${stats.sent} envíos completados sin ningún bloqueo. Sin rate limiting.`;
     severity = 'critical';
   }
 

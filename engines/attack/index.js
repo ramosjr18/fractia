@@ -10,12 +10,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── Profile registry ──────────────────────────────────────────────────────────
 export const PROFILES = {
+  'recon':         () => import('./profiles/recon.js'),
+  'spike-test':    () => import('./profiles/spikeTest.js'),
   'slowloris':     () => import('./profiles/slowloris.js'),
   'bots-stuffing': () => import('./profiles/botsStuffing.js'),
   'form-flood':    () => import('./profiles/formFlood.js'),
 };
 
 export const PROFILE_LIST = [
+  {
+    id:           'recon',
+    name:         'Reconnaissance',
+    description:  'Reconocimiento pasivo: headers de seguridad, archivos expuestos, tech stack, CORS',
+    risk:         'low',
+    requiredOpts: [],
+  },
+  {
+    id:           'spike-test',
+    name:         'Spike Test',
+    description:  'Ráfaga de requests concurrentes para validar rate limiting y estabilidad bajo carga',
+    risk:         'medium',
+    requiredOpts: [],
+  },
   {
     id:           'slowloris',
     name:         'Slowloris',
