@@ -318,6 +318,164 @@ function printSpikeVerdict(result) {
   console.log('');
 }
 
+// ── Live output: zap-scan ─────────────────────────────────────────────────────
+function zapScanHooks() {
+  const SEV_COLOR = {
+    critical: chalk.hex('#ff2d55').bold,
+    high:     chalk.hex('#ff9f1c').bold,
+    medium:   chalk.hex('#00b4d8'),
+    low:      chalk.hex('#5a6880'),
+    info:     colors.dim,
+    ok:       chalk.hex('#00f5a0'),
+  };
+
+  return {
+    onPhase(phase, msg) {
+      process.stdout.write(`\r\x1b[2K  ${chalk.hex('#a78bfa')('◈')}  ${colors.dim(msg || phase)}`);
+    },
+    onZapLog(line) {
+      // Only surface meaningful ZAP lines, skip noisy progress
+      if (line.includes('WARN') || line.includes('ERROR') || line.includes('FAIL')) {
+        process.stdout.write('\r\x1b[2K');
+        console.log(`  ${chalk.hex('#ff9f1c')('·')}  ${colors.dim(line.slice(0, 90))}`);
+      } else {
+        process.stdout.write(`\r\x1b[2K  ${colors.dim('◌')}  ${colors.dim(line.slice(0, 80))}`);
+      }
+    },
+  };
+}
+
+// ── ZAP verdict renderer ──────────────────────────────────────────────────────
+function printZapVerdict(result) {
+  const SEV = {
+    critical: { icon: '✖', color: chalk.hex('#ff2d55').bold },
+    high:     { icon: '▲', color: chalk.hex('#ff9f1c').bold },
+    medium:   { icon: '◆', color: chalk.hex('#00b4d8')      },
+    low:      { icon: '◇', color: chalk.hex('#5a6880')      },
+    ok:       { icon: '✓', color: chalk.hex('#00f5a0')      },
+  };
+  const sev = SEV[result.severity] || SEV.medium;
+
+  console.log('');
+  console.log(`  ${divider(60)}`);
+  console.log('');
+  console.log(`  ${sev.color(`${sev.icon} ${result.severity.toUpperCase()}`)}  ${chalk.bold.white(result.verdict)}`);
+  console.log('');
+  console.log(`  ${colors.dim('Runner')}    ${chalk.hex('#c8d6f0')(result.runner || '—')}`);
+  console.log(`  ${colors.dim('Modo')}      ${chalk.hex('#c8d6f0')(result.mode || 'baseline')}`);
+  console.log(`  ${colors.dim('Total')}     ${chalk.hex('#c8d6f0')(result.stats?.total ?? 0)} alertas`);
+
+  const s = result.stats || {};
+  if (s.critical) console.log(`  ${chalk.hex('#ff2d55').bold('Crítico')}   ${chalk.hex('#ff2d55').bold(s.critical)}`);
+  if (s.high)     console.log(`  ${chalk.hex('#ff9f1c').bold('Alto')}      ${chalk.hex('#ff9f1c').bold(s.high)}`);
+  if (s.medium)   console.log(`  ${chalk.hex('#00b4d8')('Medio')}     ${chalk.hex('#00b4d8')(s.medium)}`);
+  if (s.low)      console.log(`  ${colors.dim('Bajo')}      ${colors.dim(s.low)}`);
+
+  const top = (result.alerts || []).filter(a => a.severity === 'critical' || a.severity === 'high').slice(0, 5);
+  if (top.length) {
+    console.log('');
+    console.log(`  ${chalk.hex('#ff9f1c')('▸ Top hallazgos')}`);
+    for (const a of top) {
+      const c = a.severity === 'critical' ? chalk.hex('#ff2d55').bold : chalk.hex('#ff9f1c').bold;
+      console.log(`    ${c(a.severity.padEnd(9))}  ${chalk.hex('#c8d6f0')(a.title)}`);
+      if (a.url && a.url !== result.target) console.log(`    ${colors.dim(' '.repeat(9))}  ${colors.dim(a.url.slice(0, 70))}`);
+    }
+  }
+
+  if (result.recommendations?.length) {
+    console.log('');
+    console.log(`  ${chalk.hex('#00b4d8')('▸ Recomendaciones')}`);
+    for (const rec of result.recommendations.slice(0, 6)) {
+      const lines = wordWrap(rec, 60);
+      console.log(`    ${colors.dim('·')} ${chalk.hex('#c8d6f0')(lines[0])}`);
+      for (const l of lines.slice(1)) console.log(`      ${chalk.hex('#c8d6f0')(l)}`);
+    }
+  }
+  console.log('');
+}
+
+// ── Live output: nuclei-fuzz ──────────────────────────────────────────────────
+function nucleiFuzzHooks() {
+  const SEV_COLOR = {
+    critical: chalk.hex('#ff2d55').bold,
+    high:     chalk.hex('#ff9f1c').bold,
+    medium:   chalk.hex('#00b4d8'),
+    low:      chalk.hex('#5a6880'),
+    info:     colors.dim,
+  };
+  let findingCount = 0;
+
+  return {
+    onPhase(phase, msg) {
+      process.stdout.write(`\r\x1b[2K  ${chalk.hex('#a78bfa')('◈')}  ${colors.dim(msg || phase)}`);
+    },
+    onNucleiLog(line) {
+      process.stdout.write(`\r\x1b[2K  ${colors.dim('◌')}  ${colors.dim(line.slice(0, 80))}`);
+    },
+    onNucleiFinding(f) {
+      process.stdout.write('\r\x1b[2K');
+      findingCount++;
+      const sev    = f.severity || f.info?.severity || 'info';
+      const sevFn  = SEV_COLOR[sev] || colors.dim;
+      const name   = f.name || f['template-id'] || f.title || 'Finding';
+      const url    = f.url || f.matched_at || f.host || '';
+      console.log(
+        `  ${sevFn('✖')}  ${sevFn(sev.padEnd(9))}  ${chalk.hex('#c8d6f0')(name.slice(0, 45))}` +
+        (url ? `  ${colors.dim(url.slice(0, 50))}` : '')
+      );
+    },
+  };
+}
+
+// ── Nuclei verdict renderer ───────────────────────────────────────────────────
+function printNucleiVerdict(result) {
+  const SEV = {
+    critical: { icon: '✖', color: chalk.hex('#ff2d55').bold },
+    high:     { icon: '▲', color: chalk.hex('#ff9f1c').bold },
+    medium:   { icon: '◆', color: chalk.hex('#00b4d8')      },
+    low:      { icon: '◇', color: chalk.hex('#5a6880')      },
+    ok:       { icon: '✓', color: chalk.hex('#00f5a0')      },
+  };
+  const sev = SEV[result.severity] || SEV.medium;
+
+  console.log('');
+  console.log(`  ${divider(60)}`);
+  console.log('');
+  console.log(`  ${sev.color(`${sev.icon} ${result.severity.toUpperCase()}`)}  ${chalk.bold.white(result.verdict)}`);
+  console.log('');
+  console.log(`  ${colors.dim('Runner')}    ${chalk.hex('#c8d6f0')(result.runner || '—')}`);
+  console.log(`  ${colors.dim('Total')}     ${chalk.hex('#c8d6f0')(result.stats?.total ?? 0)} hallazgos`);
+
+  const s = result.stats || {};
+  if (s.critical) console.log(`  ${chalk.hex('#ff2d55').bold('Crítico')}   ${chalk.hex('#ff2d55').bold(s.critical)}`);
+  if (s.high)     console.log(`  ${chalk.hex('#ff9f1c').bold('Alto')}      ${chalk.hex('#ff9f1c').bold(s.high)}`);
+  if (s.medium)   console.log(`  ${chalk.hex('#00b4d8')('Medio')}     ${chalk.hex('#00b4d8')(s.medium)}`);
+  if (s.low)      console.log(`  ${colors.dim('Bajo/Info')} ${colors.dim(s.low)}`);
+
+  // Show top critical/high findings if not already printed live
+  const top = (result.findings || []).filter(f => f.severity === 'critical').slice(0, 5);
+  if (top.length) {
+    console.log('');
+    console.log(`  ${chalk.hex('#ff2d55').bold('▸ Críticos')}`);
+    for (const f of top) {
+      console.log(`    ${chalk.hex('#ff2d55').bold('✖')}  ${chalk.hex('#c8d6f0')(f.name || f.templateId)}`);
+      if (f.cveId) console.log(`       ${colors.dim(f.cveId)}`);
+      if (f.url && f.url !== result.target) console.log(`       ${colors.dim(f.url.slice(0, 70))}`);
+    }
+  }
+
+  if (result.recommendations?.length) {
+    console.log('');
+    console.log(`  ${chalk.hex('#00b4d8')('▸ Recomendaciones')}`);
+    for (const rec of result.recommendations.slice(0, 8)) {
+      const lines = wordWrap(rec, 60);
+      console.log(`    ${colors.dim('·')} ${chalk.hex('#c8d6f0')(lines[0])}`);
+      for (const l of lines.slice(1)) console.log(`      ${chalk.hex('#c8d6f0')(l)}`);
+    }
+  }
+  console.log('');
+}
+
 // ── Live output: form-flood ───────────────────────────────────────────────────
 function formFloodHooks(mode) {
   return {
@@ -547,12 +705,40 @@ export async function runAttackInteractive() {
     if (fiAns) opts.formIndex = parseInt(fiAns, 10);
   }
 
-  // Optional overrides
+  // zap-scan specific options
+  if (profile.id === 'zap-scan') {
+    console.log('');
+    console.log(`  ${colors.dim('modos ZAP disponibles')}`);
+    console.log(t.option('[1]', `baseline   ${colors.dim('Spider pasivo + reglas pasivas (más rápido, no invasivo)')}`));
+    console.log(t.option('[2]', `active     ${colors.dim('Active Scan completo (más lento, invasivo)')}`));
+    console.log('');
+    const mAns = await ask(colors.accent2('  ▸ ') + colors.text('Modo [1-2, default: 1]: '));
+    opts.mode = mAns === '2' ? 'active' : 'baseline';
+    const toAns = await ask(colors.accent2('  ▸ ') + colors.text('Timeout en segundos [120]: '));
+    if (toAns) opts.timeout = parseInt(toAns, 10);
+  }
+
+  // nuclei-fuzz specific options
+  if (profile.id === 'nuclei-fuzz') {
+    console.log('');
+    const sevAns = await ask(colors.accent2('  ▸ ') + colors.text('Severidades [low,medium,high,critical]: '));
+    if (sevAns) opts.severity = sevAns.split(',').map(s => s.trim());
+    const tagsAns = await ask(colors.accent2('  ▸ ') + colors.text('Tags Nuclei (ej: cve,misconfig — Enter para todos): '));
+    if (tagsAns) opts.tags = tagsAns.split(',').map(s => s.trim());
+    const toAns = await ask(colors.accent2('  ▸ ') + colors.text('Timeout en segundos [90]: '));
+    if (toAns) opts.timeout = parseInt(toAns, 10);
+  }
+
+  // Optional overrides (skip for zap/nuclei which have their own timeout)
+  const skipGenericOpts = profile.id === 'zap-scan' || profile.id === 'nuclei-fuzz';
+
+  if (!skipGenericOpts) {
   const reqAns = await ask(colors.accent2('  ▸ ') + colors.text('Requests [200]: '));
   if (reqAns) opts.requests = parseInt(reqAns, 10);
 
   const durAns = await ask(colors.accent2('  ▸ ') + colors.text('Duración máx en segundos [30]: '));
   if (durAns) opts.duration = parseInt(durAns, 10);
+  }
 
   printAttackWarning({ target, profile: profile.id, opts });
 
@@ -582,7 +768,11 @@ async function executeAttack({ target, profile, opts }) {
         ? slowlorisHooks()
         : profile === 'form-flood'
           ? formFloodHooks(opts.mode || 'flood')
-          : stuffingHooks();
+          : profile === 'zap-scan'
+            ? zapScanHooks()
+            : profile === 'nuclei-fuzz'
+              ? nucleiFuzzHooks()
+              : stuffingHooks();
 
   // Graceful Ctrl+C
   let result;
@@ -600,9 +790,11 @@ async function executeAttack({ target, profile, opts }) {
     process.stdout.write('\r\x1b[2K');
   }
 
-  if (result.profile === 'recon')       printReconVerdict(result);
+  if (result.profile === 'recon')           printReconVerdict(result);
   else if (result.profile === 'spike-test') printSpikeVerdict(result);
-  else                                  printVerdict(result);
+  else if (result.profile === 'zap-scan')   printZapVerdict(result);
+  else if (result.profile === 'nuclei-fuzz') printNucleiVerdict(result);
+  else                                      printVerdict(result);
 
   const reportPath = saveAttackReport({ result, target, projectName: new URL(target).hostname });
   const reportUrl  = `file://${reportPath}`;

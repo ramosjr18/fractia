@@ -15,6 +15,8 @@ export const PROFILES = {
   'slowloris':     () => import('./profiles/slowloris.js'),
   'bots-stuffing': () => import('./profiles/botsStuffing.js'),
   'form-flood':    () => import('./profiles/formFlood.js'),
+  'zap-scan':      () => import('./profiles/zapScan.js'),
+  'nuclei-fuzz':   () => import('./profiles/nucleiFuzz.js'),
 };
 
 export const PROFILE_LIST = [
@@ -53,6 +55,22 @@ export const PROFILE_LIST = [
     risk:         'medium',
     requiredOpts: [],
     modes:        ['flood', 'user-enum', 'stuffing', 'spam', 'inject'],
+  },
+  {
+    id:           'zap-scan',
+    name:         'OWASP ZAP Scan',
+    description:  'DAST completo con OWASP ZAP — spider pasivo + reglas de vulnerabilidad. Requiere ZAP o Docker.',
+    risk:         'medium',
+    requiredOpts: [],
+    opts:         { mode: 'baseline|active', timeout: 120 },
+  },
+  {
+    id:           'nuclei-fuzz',
+    name:         'Nuclei Fuzzer',
+    description:  'Fuzzing con plantillas Nuclei — CVEs, misconfigs, exposed panels, default creds',
+    risk:         'medium',
+    requiredOpts: [],
+    opts:         { severity: 'low,medium,high,critical', tags: '', timeout: 90 },
   },
 ];
 
