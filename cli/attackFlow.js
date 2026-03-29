@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import { divider, colors, t, link } from './theme.js';
 import { runAttack, saveAttackReport, PROFILE_LIST } from '../engines/attack/index.js';
+import { checkZapSetup, findZapBinary, startZapDaemon, probeZapApi } from '../engines/attack/profiles/zapScan.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -361,24 +362,45 @@ function printZapVerdict(result) {
   console.log('');
   console.log(`  ${sev.color(`${sev.icon} ${result.severity.toUpperCase()}`)}  ${chalk.bold.white(result.verdict)}`);
   console.log('');
-  console.log(`  ${colors.dim('Runner')}    ${chalk.hex('#c8d6f0')(result.runner || '—')}`);
-  console.log(`  ${colors.dim('Modo')}      ${chalk.hex('#c8d6f0')(result.mode || 'baseline')}`);
-  console.log(`  ${colors.dim('Total')}     ${chalk.hex('#c8d6f0')(result.stats?.total ?? 0)} alertas`);
-
   const s = result.stats || {};
+  console.log(`  ${colors.dim('Escáner')}   ${chalk.hex('#c8d6f0')(result.runner || '—')}`);
+  console.log(`  ${colors.dim('Target')}    ${chalk.hex('#00b4d8')(result.target)}`);
+  console.log(`  ${colors.dim('Modo')}      ${chalk.hex('#c8d6f0')(result.mode || 'baseline')}`);
+  console.log(`  ${colors.dim('Total')}     ${chalk.hex('#c8d6f0')(s.total ?? 0)} alertas${s.lowTypes ? colors.dim(` · ${s.lowTypes} tipos distintos`) : ''}`);
+  console.log('');
+
   if (s.critical) console.log(`  ${chalk.hex('#ff2d55').bold('Crítico')}   ${chalk.hex('#ff2d55').bold(s.critical)}`);
   if (s.high)     console.log(`  ${chalk.hex('#ff9f1c').bold('Alto')}      ${chalk.hex('#ff9f1c').bold(s.high)}`);
   if (s.medium)   console.log(`  ${chalk.hex('#00b4d8')('Medio')}     ${chalk.hex('#00b4d8')(s.medium)}`);
-  if (s.low)      console.log(`  ${colors.dim('Bajo')}      ${colors.dim(s.low)}`);
+  if (s.low)      console.log(`  ${colors.dim('Bajo/Info')} ${colors.dim(s.low)}  ${colors.dim('(headers, cache, info leaks)')}`);
 
+  // Top críticos/altos
   const top = (result.alerts || []).filter(a => a.severity === 'critical' || a.severity === 'high').slice(0, 5);
   if (top.length) {
     console.log('');
-    console.log(`  ${chalk.hex('#ff9f1c')('▸ Top hallazgos')}`);
+    console.log(`  ${chalk.hex('#ff9f1c')('▸ Hallazgos prioritarios')}`);
     for (const a of top) {
       const c = a.severity === 'critical' ? chalk.hex('#ff2d55').bold : chalk.hex('#ff9f1c').bold;
       console.log(`    ${c(a.severity.padEnd(9))}  ${chalk.hex('#c8d6f0')(a.title)}`);
       if (a.url && a.url !== result.target) console.log(`    ${colors.dim(' '.repeat(9))}  ${colors.dim(a.url.slice(0, 70))}`);
+    }
+  }
+
+  // Para alertas low: mostrar los tipos únicos encontrados
+  if (!top.length && s.low > 0) {
+    const lowAlerts = (result.alerts || []).filter(a => a.severity === 'low');
+    const byType    = [...new Map(lowAlerts.map(a => [a.title, a])).values()].slice(0, 6);
+    console.log('');
+    console.log(`  ${colors.dim('▸ Tipos de alertas informativas')}`);
+    for (const a of byType) {
+      const countForType = lowAlerts.filter(x => x.title === a.title).length;
+      console.log(
+        `    ${colors.dim('·')}  ${chalk.hex('#c8d6f0')(a.title.slice(0, 55))}` +
+        (countForType > 1 ? `  ${colors.dim(`×${countForType}`)}` : '')
+      );
+    }
+    if (byType.length < s.lowTypes) {
+      console.log(`    ${colors.dim(`… y ${s.lowTypes - byType.length} tipos más`)}`);
     }
   }
 
@@ -620,6 +642,139 @@ function printVerdict(result) {
   console.log('');
 }
 
+// ── ZAP Interactive Setup ─────────────────────────────────────────────────────
+/**
+ * Detecta el estado de ZAP y guía al usuario interactivamente
+ * para configurarlo si es necesario.
+ * Retorna { mode, apiPort, apiKey } listo para pasar a run().
+ */
+async function zapInteractiveSetup() {
+  const warn   = chalk.hex('#ff9f1c').bold;
+  const ok     = chalk.hex('#00f5a0');
+  const info   = colors.dim;
+  const hi     = chalk.hex('#c8d6f0');
+  const accent = chalk.hex('#a78bfa').bold;
+
+  console.log('');
+  console.log(`  ${accent('◈ Configuración OWASP ZAP')}`);
+  console.log(`  ${divider(50)}`);
+  console.log('');
+  console.log(`  ${info('Comprobando ZAP en el sistema…')}`);
+
+  // 1. Probar API en puerto por defecto
+  let apiPort = 8080;
+  let probe   = await probeZapApi(apiPort, '');
+
+  if (probe.running && !probe.needsApiKey) {
+    console.log(`  ${ok('✓')} ZAP API activa en ${hi(`localhost:${apiPort}`)} (v${probe.version || '?'})`);
+    console.log('');
+    return await zapAskMode(apiPort, '');
+  }
+
+  if (probe.running && probe.needsApiKey) {
+    console.log(`  ${warn('◆')} ZAP API activa en ${hi(`localhost:${apiPort}`)} — requiere API key`);
+    console.log('');
+    console.log(`  ${info('Encuéntrala en ZAP → Herramientas → Opciones → API → Clave API')}`);
+    const key = await ask(colors.accent2('  ▸ ') + colors.text('API key de ZAP (Enter para reintentar sin key): '));
+    const recheck = await probeZapApi(apiPort, key);
+    if (!recheck.running || recheck.needsApiKey) {
+      console.log(`  ${warn('⚠')} No se pudo verificar la API key. Continuando con el intento...`);
+    } else {
+      console.log(`  ${ok('✓')} API key verificada`);
+    }
+    return await zapAskMode(apiPort, key);
+  }
+
+  // ZAP API no está corriendo
+  console.log(`  ${info('ZAP API no detectada en localhost:8080')}`);
+
+  // ¿Está instalado?
+  const zapPath = findZapBinary();
+
+  if (zapPath) {
+    console.log(`  ${ok('✓')} ZAP encontrado en: ${hi(zapPath)}`);
+    console.log('');
+    console.log(`  ${info('ZAP no está corriendo como daemon/API.')}`);
+    console.log(`  Opciones:`);
+    console.log(`  ${hi('[1]')}  Fractia inicia ZAP en modo daemon automáticamente`);
+    console.log(`  ${hi('[2]')}  Yo abro ZAP manualmente (o ya está abierto en otro puerto)`);
+    console.log(`  ${hi('[3]')}  Continuar sin ZAP (fallback built-in)`);
+    console.log('');
+
+    const ans = await ask(colors.accent2('  ▸ ') + colors.text('Opción [1-3]: '));
+
+    if (ans === '2') {
+      // Usuario abrirá ZAP manualmente
+      const portAns = await ask(colors.accent2('  ▸ ') + colors.text(`Puerto ZAP [8080]: `));
+      apiPort = parseInt(portAns, 10) || 8080;
+      const keyAns = await ask(colors.accent2('  ▸ ') + colors.text('API key (Enter si no hay): '));
+
+      console.log(`  ${info('Esperando a que ZAP esté listo en puerto')} ${hi(String(apiPort))}${info('…')}`);
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        process.stdout.write(`\r\x1b[2K  ${info(`Intento ${i+1}/30…`)}`);
+        const p = await probeZapApi(apiPort, keyAns);
+        if (p.running && !p.needsApiKey) { ready = true; break; }
+      }
+      process.stdout.write('\r\x1b[2K');
+      if (ready) {
+        console.log(`  ${ok('✓')} ZAP API lista en puerto ${apiPort}`);
+        return await zapAskMode(apiPort, keyAns);
+      } else {
+        console.log(`  ${warn('⚠')} ZAP no respondió. Continuando con fallback.`);
+        return { mode: 'baseline', apiPort, apiKey: keyAns };
+      }
+    }
+
+    if (ans === '3') {
+      return { mode: 'baseline', apiPort: 8080, apiKey: '' };
+    }
+
+    // Opción 1: arrancar daemon
+    console.log('');
+    console.log(`  ${info('Iniciando ZAP daemon — puede tardar hasta 30s…')}`);
+    const started = await startZapDaemon(zapPath, apiPort, '');
+    if (started.ok) {
+      console.log(`  ${ok('✓')} ZAP daemon listo (PID ${started.pid})`);
+      return await zapAskMode(apiPort, '');
+    } else {
+      console.log(`  ${warn('⚠')} ZAP daemon no respondió. Continuando con fallback.`);
+      return { mode: 'baseline', apiPort, apiKey: '' };
+    }
+  }
+
+  // ZAP no instalado
+  console.log(`  ${warn('✖')} ZAP no encontrado en el sistema.`);
+  console.log('');
+  console.log(`  ${accent('Instalación de OWASP ZAP:')}`);
+  console.log(`  ${hi('• macOS:')}   https://www.zaproxy.org/download/ → descarga el .dmg`);
+  console.log(`  ${hi('• Linux:')}   sudo apt install zaproxy  /  descarga .tar.gz en zaproxy.org`);
+  console.log(`  ${hi('• Docker:')}  docker pull ghcr.io/zaproxy/zaproxy:stable`);
+  console.log('');
+  console.log(`  ${info('Una vez instalado:')} abre ZAP, ve a ${hi('Herramientas → Opciones → API')},`);
+  console.log(`  ${info('asegúrate de que la API está activada y anota la API key.')}`);
+  console.log(`  ${info('Luego vuelve a ejecutar este perfil.')}`);
+  console.log('');
+  console.log(`  ${info('Continuando con el reconocimiento built-in…')}`);
+  return { mode: 'baseline', apiPort: 8080, apiKey: '' };
+}
+
+async function zapAskMode(apiPort, apiKey) {
+  console.log('');
+  console.log(`  ${colors.dim('modos de escaneo ZAP:')}`);
+  console.log(`  ${chalk.hex('#c8d6f0')('[1]')}  ${chalk.bold.white('baseline')}   ${colors.dim('Spider pasivo + reglas pasivas (rápido, no invasivo)')}`);
+  console.log(`  ${chalk.hex('#c8d6f0')('[2]')}  ${chalk.bold.white('active')}     ${colors.dim('Active Scan completo (más lento, busca más vulnerabilidades)')}`);
+  console.log('');
+  const mAns = await ask(colors.accent2('  ▸ ') + colors.text('Modo [1/2, default: 1]: '));
+  const mode = mAns === '2' ? 'active' : 'baseline';
+
+  const toAns = await ask(colors.accent2('  ▸ ') + colors.text('Timeout en segundos [120]: '));
+  const timeout = parseInt(toAns, 10) || 120;
+
+  return { mode, apiPort, apiKey, timeout };
+}
+
 // ── Main entry points ─────────────────────────────────────────────────────────
 
 /**
@@ -705,17 +860,10 @@ export async function runAttackInteractive() {
     if (fiAns) opts.formIndex = parseInt(fiAns, 10);
   }
 
-  // zap-scan specific options
+  // zap-scan specific options + interactive setup
   if (profile.id === 'zap-scan') {
-    console.log('');
-    console.log(`  ${colors.dim('modos ZAP disponibles')}`);
-    console.log(t.option('[1]', `baseline   ${colors.dim('Spider pasivo + reglas pasivas (más rápido, no invasivo)')}`));
-    console.log(t.option('[2]', `active     ${colors.dim('Active Scan completo (más lento, invasivo)')}`));
-    console.log('');
-    const mAns = await ask(colors.accent2('  ▸ ') + colors.text('Modo [1-2, default: 1]: '));
-    opts.mode = mAns === '2' ? 'active' : 'baseline';
-    const toAns = await ask(colors.accent2('  ▸ ') + colors.text('Timeout en segundos [120]: '));
-    if (toAns) opts.timeout = parseInt(toAns, 10);
+    const zapOpts = await zapInteractiveSetup();
+    Object.assign(opts, zapOpts);
   }
 
   // nuclei-fuzz specific options

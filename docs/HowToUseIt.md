@@ -43,7 +43,7 @@ node fractia.js serve
 ```
 [1]  Code Audit       — SAST estático · 14 módulos
 [2]  Infra Audit      — IronBase · hardening Linux
-[3]  Attack  DAST     — recon · spike-test · slowloris · bots-stuffing · form-flood
+[3]  Attack  DAST     — recon · spike-test · slowloris · bots-stuffing · form-flood · zap-scan · nuclei-fuzz
 [4]  Mobile Audit     — Flutter/Dart · 10 módulos
 [5]  Auto-Fix   AI    — corrige critical/high · crea branch · abre PR
 [6]  Review PR  Shift-Left — audita un PR de GitHub antes del merge
@@ -162,6 +162,107 @@ Valida que el lockout y el rate limit por usuario funcionen.
 fractia attack --target https://api.ejemplo.com --profile bots-stuffing
 fractia attack --target https://api.ejemplo.com --profile bots-stuffing --login-path /api/auth/login
 ```
+
+---
+
+#### `zap-scan` — OWASP ZAP DAST
+
+Integración con OWASP ZAP para análisis DAST profesional. Detecta automáticamente si ZAP está disponible y te guía interactivamente para configurarlo si no lo está.
+
+**Instalación de ZAP** (una sola vez):
+
+```bash
+# macOS — descarga el .dmg desde:
+# https://www.zaproxy.org/download/
+
+# Linux
+sudo apt install zaproxy       # Debian/Ubuntu
+# o descarga el .tar.gz desde zaproxy.org
+
+# Docker (sin instalación local)
+docker pull ghcr.io/zaproxy/zaproxy:stable
+```
+
+**Configuración de la API de ZAP** (necesaria para que Fractia se conecte):
+
+1. Abre ZAP → **Herramientas → Opciones → API**
+2. Asegúrate de que la API está **activada**
+3. Opción A: deja la API key en blanco y activa *"Deshabilitar clave de API"*
+4. Opción B: copia la API key — Fractia te la pedirá si la necesita
+
+**Cómo usarlo:**
+
+```bash
+# Modo interactivo — Fractia detecta ZAP y te configura paso a paso
+fractia attack --target https://tuapp.com --profile zap-scan
+
+# CLI directo con ZAP ya corriendo en localhost:8080
+fractia attack --target https://tuapp.com --profile zap-scan --zap-api-key TU_KEY
+
+# Active scan completo (más lento, más vulnerabilidades)
+fractia attack --target https://tuapp.com --profile zap-scan --mode active
+```
+
+**Flujo automático que sigue Fractia:**
+
+1. **Detecta** si ZAP API está activa en `localhost:8080`
+2. **Si está activa** → lanza spider + passive/active scan directo
+3. **Si ZAP está instalado pero no corriendo** → ofrece arrancar el daemon por ti
+4. **Si no hay API key** → te pide que la introduzcas o que la desactives en ZAP
+5. **Si ZAP no está instalado** → muestra instrucciones y usa reconocimiento propio
+
+**Modos de escaneo:**
+
+| Modo | Qué hace | Tiempo aprox. |
+|------|----------|---------------|
+| `baseline` | Spider pasivo + reglas pasivas. No invasivo. | 1-5 min |
+| `active` | Spider + Active Scan (prueba payloads reales). Más invasivo. | 5-30 min |
+
+> **Nota:** el Active Scan envía tráfico potencialmente dañino. Úsalo solo en entornos de prueba que te pertenezcan.
+
+---
+
+#### `nuclei-fuzz` — Nuclei Template Fuzzer
+
+Escaneo con plantillas Nuclei: miles de CVEs conocidos, misconfigurations, exposed panels, credenciales por defecto, y más.
+
+**Instalación de Nuclei:**
+
+```bash
+# Con Go instalado
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+# Descarga binario precompilado (macOS/Linux/Windows)
+# https://nuclei.projectdiscovery.io/
+
+# Actualizar plantillas tras instalar
+nuclei -update-templates
+```
+
+**Cómo usarlo:**
+
+```bash
+# Escaneo completo con todas las severidades
+fractia attack --target https://tuapp.com --profile nuclei-fuzz
+
+# Solo critical y high
+fractia attack --target https://tuapp.com --profile nuclei-fuzz --severity critical,high
+
+# Solo plantillas de CVEs y misconfigs
+fractia attack --target https://tuapp.com --profile nuclei-fuzz --tags cve,misconfig
+
+# Si Nuclei no está instalado → usa el fuzzer built-in de Fractia
+# (35 checks: exposed panels, .env, git, phpMyAdmin, Spring Actuator, etc.)
+```
+
+**Qué detecta Nuclei:**
+
+- CVEs activos para tecnologías detectadas en el stack (WordPress, Spring, Django, etc.)
+- Paneles de administración expuestos (phpMyAdmin, Grafana, Kibana, etc.)
+- Archivos sensibles: `.env`, `.git`, `config.yml`, `backup.sql`, claves privadas
+- Misconfigurations: Spring Actuator, Apache server-status, Go pprof, Prometheus metrics
+- Login endpoints sin CSRF / con credenciales por defecto
+- Exposiciones de API: Swagger, GraphQL, OpenAPI sin autenticación
 
 ---
 

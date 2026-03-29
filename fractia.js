@@ -5,7 +5,7 @@
  *   fractia                                          → interactive menu
  *   fractia serve                                    → start web UI server
  *   fractia attack --target URL --profile PROFILE    → DAST attack (direct)
- *     Profiles: recon | spike-test | slowloris | bots-stuffing | form-flood
+ *     Profiles: recon | spike-test | slowloris | bots-stuffing | form-flood | zap-scan | nuclei-fuzz
  *     Options:  --login-path PATH  --requests N  --duration N  --body TEMPLATE
  *               --mode MODE  (form-flood: flood|user-enum|stuffing|spam|inject|all)
  *               --method GET|POST  (spike-test)
@@ -138,7 +138,7 @@ async function mainMenu() {
   console.log('');
   console.log(t.option('[1]', `Code Audit          ${colors.dim(`${ALL_MODULES.length} módulos disponibles`)}`));
   console.log(t.option('[2]', `Infra Audit         ${ironbase ? colors.dim('IronBase listo') : chalk.hex('#ff2d55')('IronBase no disponible')}`));
-  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('recon · spike-test · slowloris · bots-stuffing · form-flood')}`));
+  console.log(t.option('[3]', `Attack  ${chalk.hex('#ff9f1c').bold('DAST')}         ${colors.dim('recon · spike-test · slowloris · bots-stuffing · form-flood · zap-scan · nuclei-fuzz')}`));
   console.log(t.option('[4]', `Mobile Audit  ${chalk.hex('#34d399').bold('Flutter')}  ${colors.dim('10 módulos · auth · crypto · network · storage · …')}`));
   console.log(t.option('[5]', `Auto-Fix      ${chalk.hex('#c084fc').bold('AI')}         ${colors.dim('corrige critical/high · crea branch · abre PR')}`));
   console.log(t.option('[6]', `Review PR     ${chalk.hex('#38bdf8').bold('Shift-Left')} ${colors.dim('audita un PR de GitHub antes del merge')}`));
