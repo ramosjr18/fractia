@@ -13,6 +13,7 @@ import { config }              from './config.js';
 import { discoverStructure }   from './utils/fileScanner.js';
 import { isIronbaseAvailable, getInfraModules, runInfraScan } from './engines/ironbaseRunner.js';
 import { runCodeAudit, calculateRiskScore, generateSummary, ALL_MODULES } from './engines/codeAudit.js';
+import { run as runWebAnalyzer } from './engines/webAnalyzer.js';
 import { AuditLogger, InfraLogger } from './cli/auditLogger.js';
 import { t, link, divider, logo, colors, box } from './cli/theme.js';
 
@@ -94,6 +95,20 @@ app.post('/api/infra-audit', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     isInfraRunning = false;
+  }
+});
+
+// ── Web Analyzer endpoint ───────────────────────────────────────────────────
+app.post('/api/web-analyzer', async (req, res) => {
+  const { target } = req.body;
+  if (!target) return res.status(400).json({ error: 'Target URL is required.' });
+
+  try {
+    const result = await runWebAnalyzer({ target });
+    res.json(result);
+  } catch (err) {
+    console.error('[server] Web analyzer failed:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

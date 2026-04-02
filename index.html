@@ -221,8 +221,17 @@
   .mode-tab.active-infra::after {
     background: linear-gradient(90deg, var(--infra-accent), #818cf8);
   }
+  
+  .mode-tab.active-web {
+    background: var(--panel);
+    color: var(--accent2);
+  }
 
-  .mode-tab:hover:not(.active-code):not(.active-infra) {
+  .mode-tab.active-web::after {
+    background: linear-gradient(90deg, var(--accent2), #00d4ff);
+  }
+
+  .mode-tab:hover:not(.active-code):not(.active-infra):not(.active-web) {
     background: rgba(255,255,255,0.02);
     color: var(--text);
   }
@@ -249,6 +258,18 @@
     background: rgba(167,139,250,0.1);
     color: var(--infra-accent);
     border: 1px solid rgba(167,139,250,0.2);
+  }
+
+  .badge-web {
+    background: rgba(0,180,216,0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(0,180,216,0.2);
+  }
+
+  .badge-web {
+    background: rgba(0,180,216,0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(0,180,216,0.2);
   }
 
   /* ── ENGINE PANELS ── */
@@ -431,6 +452,22 @@
 
   .run-btn-infra:hover {
     box-shadow: 0 0 20px rgba(167,139,250,0.4);
+  }
+
+  .run-btn-web {
+    background: var(--accent2);
+  }
+
+  .run-btn-web:hover {
+    box-shadow: 0 0 20px rgba(0,180,216,0.4);
+  }
+
+  .run-btn-web {
+    background: var(--accent2);
+  }
+
+  .run-btn-web:hover {
+    box-shadow: 0 0 20px rgba(0,180,216,0.4);
   }
 
   /* ── OUTPUT PANEL ── */
@@ -787,6 +824,11 @@
       Infra Audit
       <span class="tab-badge badge-infra">9 MODULES</span>
     </button>
+    <button class="mode-tab" onclick="switchMode('web')">
+      <span class="tab-icon">&#127760;</span>
+      Web Analyzer
+      <span class="tab-badge badge-web">NEW</span>
+    </button>
   </div>
 
   <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -887,6 +929,26 @@
   </div>
 
   <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- WEB ANALYZER PANEL -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <div id="webPanel" class="engine-panel">
+    <div class="app-config">
+      <div class="config-grid" style="grid-template-columns: 1fr;">
+        <div>
+          <div class="field-label" style="color:var(--accent2)">URL del Objetivo</div>
+          <input class="field-input" id="webTarget" type="text" placeholder="https://ejemplo.com" style="border-color:rgba(0,180,216,0.2)" />
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <p style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-bottom:15px;">
+          // Análisis pasivo: Identifica CMS, frameworks, analíticas y librerías UI mediante fingerprints estáticos.
+        </p>
+      </div>
+      <button id="runWebBtn" class="run-btn run-btn-web" onclick="runWebAnalyzer()">&#128269; ANALIZAR SITIO WEB</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
   <!-- OUTPUT (shared) -->
   <!-- ════════════════════════════════════════════════════════════════════════ -->
   <div class="output-panel">
@@ -940,18 +1002,21 @@ function switchMode(mode) {
 
   // Update tabs
   document.querySelectorAll('.mode-tab').forEach(tab => {
-    tab.classList.remove('active-code', 'active-infra');
+    tab.classList.remove('active-code', 'active-infra', 'active-web');
   });
   const tabs = document.querySelectorAll('.mode-tab');
   if (mode === 'code') {
     tabs[0].classList.add('active-code');
-  } else {
+  } else if (mode === 'infra') {
     tabs[1].classList.add('active-infra');
+  } else {
+    tabs[2].classList.add('active-web');
   }
 
   // Update panels
   document.getElementById('codePanel').classList.toggle('visible', mode === 'code');
   document.getElementById('infraPanel').classList.toggle('visible', mode === 'infra');
+  document.getElementById('webPanel').classList.toggle('visible', mode === 'web');
 }
 
 // ── Module chip toggle ──────────────────────────────────────────────────────
@@ -1170,6 +1235,141 @@ async function runInfraAudit() {
     btn.textContent = '\u2699 EJECUTAR AUDITORIA DE INFRAESTRUCTURA';
     document.getElementById('scanBadge').classList.remove('visible');
   }
+}
+
+// ── WEB ANALYZER ────────────────────────────────────────────────────────────
+async function runWebAnalyzer() {
+  const target = document.getElementById('webTarget').value;
+  if (!target) {
+    alert('Introduce una URL para analizar.');
+    return;
+  }
+
+  const btn = document.getElementById('runWebBtn');
+  btn.disabled = true;
+  btn.textContent = 'ANALIZANDO SITIO WEB...';
+  
+  // Custom reset for Web Analyzer
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('scanBadge').classList.add('visible');
+  document.getElementById('scanBadge').classList.add('infra-badge'); // Reuse cyan color
+  document.getElementById('scanProgress').classList.add('visible');
+  document.getElementById('reportContent').classList.remove('visible');
+  document.getElementById('reportContent').innerHTML = '';
+  document.getElementById('summaryBar').classList.remove('visible');
+  document.getElementById('terminalLines').innerHTML = '';
+  document.getElementById('outputTitleText').textContent = 'WEB TECHNOLOGY ANALYSIS';
+
+  const fill = document.getElementById('progressFill');
+  fill.classList.add('infra-fill'); // Reuse cyan
+  setProgress(10, 'Iniciando peticion HTTP...');
+
+  addTerminalLine(`Conectando con ${target}...`, false);
+
+  try {
+    const response = await fetch('/api/web-analyzer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target })
+    });
+
+    setProgress(50, 'Analizando fingerprints de respuesta...');
+    addTerminalLine('Extrayendo headers y meta etiquetas...', false);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(err.error || `Server error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    setProgress(90, 'Generando reporte de stack...');
+    addTerminalLine('Deteccion de patrones completada.', false);
+
+    setTimeout(() => {
+      document.getElementById('terminalLines').innerHTML = '';
+      document.getElementById('scanProgress').classList.remove('visible');
+      renderWebAnalyzerReport(data);
+    }, 800);
+
+  } catch (err) {
+    document.getElementById('terminalLines').innerHTML = '';
+    document.getElementById('scanProgress').classList.remove('visible');
+    addTerminalLine('ERROR: ' + err.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '\uD83D\uDD0D ANALIZAR SITIO WEB';
+    document.getElementById('scanBadge').classList.remove('visible');
+  }
+}
+
+function renderWebAnalyzerReport(data) {
+  const container = document.getElementById('reportContent');
+  container.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.style.cssText = `
+    background: rgba(0,180,216,0.04);
+    border: 1px solid rgba(0,180,216,0.15);
+    border-radius:6px; padding:14px 16px; margin-bottom:16px;
+    font-family:var(--font-mono); font-size:12px; color:var(--text); line-height:1.6;
+  `;
+  header.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="color:var(--accent2);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;">&#9656; WEB STACK REPORT</span>
+        <span class="engine-tag" style="background:rgba(0,180,216,0.1);color:var(--accent2);border-color:rgba(0,180,216,0.2)">RECON ENGINE</span>
+      </div>
+      <span style="color:var(--accent2);font-size:14px;font-weight:700;">Status: ${data.status}</span>
+    </div>
+    <div>Resultado del analisis pasivo para <strong>${data.target}</strong></div>
+    <div style="margin-top:8px;color:var(--text-dim);font-size:11px;">
+      Metas: ${data.raw.metaCount} | Headers: ${Object.keys(data.raw.headers).length} | Body: ${(data.raw.bodySize / 1024).toFixed(1)}KB
+    </div>
+  `;
+  container.appendChild(header);
+
+  const categories = {
+    cms:       { label: 'CMS / Plataforma',    color: '#ff9f1c' },
+    framework: { label: 'Frameworks JS',       color: '#a78bfa' },
+    ui:        { label: 'UI / Estilos',        color: '#ff2d55' },
+    analytics: { label: 'Analíticas / Marketing', color: '#38bdf8' },
+    infra:     { label: 'Infraestructura',     color: '#34d399' },
+    security:  { label: 'Seguridad',           color: '#ffd60a' },
+  };
+
+  let totalTechs = 0;
+  for (const [id, meta] of Object.entries(categories)) {
+    const techs = data.technologies[id];
+    if (techs && techs.length > 0) {
+      totalTechs += techs.length;
+      const card = document.createElement('div');
+      card.className = 'module-result';
+      card.innerHTML = `
+        <div class="module-result-header" style="cursor:default">
+          <div class="module-result-left">
+            <span class="severity-badge" style="background:${meta.color}22; color:${meta.color}; border:1px solid ${meta.color}44">${id.toUpperCase()}</span>
+            <span class="module-name">${meta.label}</span>
+          </div>
+          <span style="color:var(--text-dim);font-size:11px;font-family:var(--font-mono)">${techs.length} detectados</span>
+        </div>
+        <div class="module-result-body open" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          ${techs.map(t => `<div style="font-family:var(--font-mono);font-size:12px;color:var(--text)"><span style="color:${meta.color}">\u2022</span> ${t}</div>`).join('')}
+        </div>
+      `;
+      container.appendChild(card);
+    }
+  }
+
+  if (totalTechs === 0) {
+    const empty = document.createElement('div');
+    empty.style.padding = '40px';
+    empty.style.textAlign = 'center';
+    empty.style.color = 'var(--text-dim)';
+    empty.innerHTML = 'No se detectaron tecnologias conocidas mediante analisis pasivo.';
+    container.appendChild(empty);
+  }
+
+  container.classList.add('visible');
 }
 
 // ── Render Report (shared for both engines) ─────────────────────────────────

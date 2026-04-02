@@ -17,22 +17,23 @@ import { fileURLToPath } from 'url';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import chalk from 'chalk';
 
-import { config }              from './config.js';
-import { discoverStructure }   from './utils/fileScanner.js';
+import { config } from './config.js';
+import { discoverStructure } from './utils/fileScanner.js';
 import { isIronbaseAvailable } from './engines/ironbaseRunner.js';
 import { runCodeAudit, ALL_MODULES } from './engines/codeAudit.js';
-import { runInfraScan }        from './engines/ironbaseRunner.js';
+import { runInfraScan } from './engines/ironbaseRunner.js';
 import { runMobileAudit, MOBILE_MODULES, isMobileProject } from './engines/flutterRunner.js';
-import { runAutoFix }   from './engines/autoFix.js';
-import { reviewPR }     from './engines/prReviewer.js';
-import { parseRepo }    from './utils/githubClient.js';
+import { runAutoFix } from './engines/autoFix.js';
+import { reviewPR } from './engines/prReviewer.js';
+import { parseRepo } from './utils/githubClient.js';
 
 import { logo, divider, box, link, t, colors } from './cli/theme.js';
-import { selectProject, addToHistory }          from './cli/projectSelector.js';
-import { AuditLogger, InfraLogger }             from './cli/auditLogger.js';
-import { renderResults, promptDetailView }      from './cli/resultRenderer.js';
-import { store }                                from './cli/configStore.js';
-import { runAttackCLI, runAttackInteractive }   from './cli/attackFlow.js';
+import { selectProject, addToHistory } from './cli/projectSelector.js';
+import { AuditLogger, InfraLogger } from './cli/auditLogger.js';
+import { renderResults, promptDetailView } from './cli/resultRenderer.js';
+import { store } from './cli/configStore.js';
+import { runAttackCLI, runAttackInteractive } from './cli/attackFlow.js';
+import { runWebAnalyzerFlow } from './cli/webAnalyzerFlow.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,8 +42,8 @@ function saveReport({ engine, results, riskScore, summary, meta }) {
   const reportsDir = path.join(__dirname, 'reports');
   if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
 
-  const ts       = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const project  = path.basename(config.projectRoot);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const project = path.basename(config.projectRoot);
   const filename = `${project}_${engine}_${ts}.json`;
   const filepath = path.join(reportsDir, filename);
 
@@ -75,7 +76,7 @@ async function ensureAIProvider() {
   function saveToEnv(key, value) {
     const envPath = path.join(__dirname, '.env');
     let content = '';
-    try { content = readFileSync(envPath, 'utf8'); } catch {}
+    try { content = readFileSync(envPath, 'utf8'); } catch { }
     const lines = content.split('\n');
     const idx = lines.findIndex(l => l.startsWith(`${key}=`));
     if (idx >= 0) lines[idx] = `${key}=${value}`; else lines.push(`${key}=${value}`);
@@ -90,7 +91,7 @@ async function ensureAIProvider() {
   console.log(t.option('[3]', `Sin IA  ${colors.dim('— solo análisis estático')}`));
   console.log('');
 
-  const ans    = await ask(colors.accent2('  ▸ ') + colors.text('Proveedor [1/2/3]: '));
+  const ans = await ask(colors.accent2('  ▸ ') + colors.text('Proveedor [1/2/3]: '));
   const choice = ans === '2' ? 'openai' : ans === '3' ? 'none' : 'claude';
 
   if (choice === 'claude' && !config.anthropicApiKey) {
@@ -110,12 +111,12 @@ async function ensureAIProvider() {
 
 // ── Header bar (compact, shown above every screen) ───────────────────────────
 function printHeader() {
-  const proj  = chalk.hex('#a78bfa').bold(path.basename(config.projectRoot));
-  const ai    = config.aiProvider && config.aiProvider !== 'none'
+  const proj = chalk.hex('#a78bfa').bold(path.basename(config.projectRoot));
+  const ai = config.aiProvider && config.aiProvider !== 'none'
     ? chalk.hex('#00f5a0')(config.aiProvider)
     : colors.dim('sin IA');
-  const mode  = colors.dim(`[${store.get('defaultDepth')}]`);
-  const out   = colors.dim(`[${store.get('outputMode')}]`);
+  const mode = colors.dim(`[${store.get('defaultDepth')}]`);
+  const out = colors.dim(`[${store.get('outputMode')}]`);
 
   console.log('');
   console.log(logo());
@@ -142,6 +143,7 @@ async function mainMenu() {
   console.log(t.option('[4]', `Mobile Audit  ${chalk.hex('#34d399').bold('Flutter')}  ${colors.dim('10 módulos · auth · crypto · network · storage · …')}`));
   console.log(t.option('[5]', `Auto-Fix      ${chalk.hex('#c084fc').bold('AI')}         ${colors.dim('corrige critical/high · crea branch · abre PR')}`));
   console.log(t.option('[6]', `Review PR     ${chalk.hex('#38bdf8').bold('Shift-Left')} ${colors.dim('audita un PR de GitHub antes del merge')}`));
+  console.log(t.option('[7]', `Web Analyzer  ${chalk.hex('#00b4d8').bold('Recon')}      ${colors.dim('identifica stack: CMS, frameworks, librerías…')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -157,6 +159,7 @@ async function mainMenu() {
     case '4': return mobileAuditFlow();
     case '5': return autoFixFlow();
     case '6': return reviewPRFlow();
+    case '7': await runWebAnalyzerFlow(); return mainMenu();
     case 'c': return configMenu();
     case 's': return serveFlow();
     case 'p': return changeProjectFlow();
@@ -180,10 +183,10 @@ async function codeAuditFlow() {
   console.log('');
 
   const groups = [
-    { label: 'Auth & API',    mods: ['auth', 'api', 'headers'] },
-    { label: 'Inyecciones',   mods: ['sql', 'xss', 'secrets'] },
-    { label: 'Disponibilidad',mods: ['ddos', 'bots', 'deps'] },
-    { label: 'Infraestructura',mods: ['infra', 'crypto', 'logs', 'nextjs'] },
+    { label: 'Auth & API', mods: ['auth', 'api', 'headers'] },
+    { label: 'Inyecciones', mods: ['sql', 'xss', 'secrets'] },
+    { label: 'Disponibilidad', mods: ['ddos', 'bots', 'deps'] },
+    { label: 'Infraestructura', mods: ['infra', 'crypto', 'logs', 'nextjs'] },
   ];
 
   let optNum = 1;
@@ -212,7 +215,7 @@ async function codeAuditFlow() {
   console.log('');
 
   const depthAns = await ask(colors.accent2('  ▸ ') + colors.text('Depth [1/2/3]: '));
-  const depth    = depthAns === '2' ? 'deep' : depthAns === '3' ? 'full' : 'standard';
+  const depth = depthAns === '2' ? 'deep' : depthAns === '3' ? 'full' : 'standard';
 
   // Ensure AI if needed
   if (depth !== 'standard') await ensureAIProvider();
@@ -237,7 +240,7 @@ async function codeAuditFlow() {
 
   // Save JSON report
   const reportPath = saveReport({ engine: 'code', results, riskScore, summary, meta });
-  const reportUrl  = `file://${reportPath}`;
+  const reportUrl = `file://${reportPath}`;
   console.log(`  ${colors.accent('▸')} Reporte guardado  ${link(path.basename(reportPath), reportUrl)}`);
   console.log(`    ${colors.dim(reportPath)}`);
   console.log('');
@@ -311,7 +314,7 @@ async function configMenu() {
   const ans = await ask(colors.accent2('  ▸ ') + colors.text('Opción: '));
 
   if (ans === '1') {
-    const cur  = cfg.outputMode;
+    const cur = cfg.outputMode;
     const next = cur === 'expanded' ? 'compact' : 'expanded';
     store.set('outputMode', next);
     console.log(`  ${t.ok(`Output mode → ${next}`)}`);
@@ -361,7 +364,7 @@ async function changeProjectFlow() {
   function saveToEnv(key, value) {
     const envPath = path.join(__dirname, '.env');
     let content = '';
-    try { content = readFileSync(envPath, 'utf8'); } catch {}
+    try { content = readFileSync(envPath, 'utf8'); } catch { }
     const lines = content.split('\n');
     const idx = lines.findIndex(l => l.startsWith(`${key}=`));
     if (idx >= 0) lines[idx] = `${key}=${value}`; else lines.push(`${key}=${value}`);
@@ -386,7 +389,7 @@ async function mobileAuditFlow() {
 
   // ── 1. Flutter project path ───────────────────────────────────────────────
   const defaultRoot = config.projectRoot;
-  const isMobile    = isMobileProject(defaultRoot);
+  const isMobile = isMobileProject(defaultRoot);
 
   if (isMobile) {
     console.log(`  ${colors.dim('Proyecto Flutter detectado:')} ${chalk.hex('#34d399')(path.basename(defaultRoot))}`);
@@ -411,10 +414,10 @@ async function mobileAuditFlow() {
 
   // ── 2. Module selection ───────────────────────────────────────────────────
   const MODULE_GROUPS = [
-    { label: 'Auth & Storage',  mods: ['auth', 'storage'] },
-    { label: 'Red & Crypto',    mods: ['network', 'crypto'] },
-    { label: 'App & Links',     mods: ['platform', 'deeplinks'] },
-    { label: 'Build & Código',  mods: ['deps', 'obfuscation', 'logging', 'state'] },
+    { label: 'Auth & Storage', mods: ['auth', 'storage'] },
+    { label: 'Red & Crypto', mods: ['network', 'crypto'] },
+    { label: 'App & Links', mods: ['platform', 'deeplinks'] },
+    { label: 'Build & Código', mods: ['deps', 'obfuscation', 'logging', 'state'] },
   ];
 
   console.log(`  ${colors.dim('selección de módulos')}`);
@@ -433,8 +436,8 @@ async function mobileAuditFlow() {
   groupMap[optNum] = MOBILE_MODULES;
   console.log('');
 
-  const modAns     = await ask(colors.accent2('  ▸ ') + colors.text(`Módulos [1-${optNum}]: `));
-  const modChoice  = parseInt(modAns, 10);
+  const modAns = await ask(colors.accent2('  ▸ ') + colors.text(`Módulos [1-${optNum}]: `));
+  const modChoice = parseInt(modAns, 10);
   const selectedMods = groupMap[modChoice] || MOBILE_MODULES;
 
   // ── 3. Live logger ────────────────────────────────────────────────────────
@@ -447,10 +450,10 @@ async function mobileAuditFlow() {
 
   const SEV_COLOR = {
     critical: chalk.hex('#ff2d55').bold,
-    high:     chalk.hex('#ff9f1c').bold,
-    medium:   chalk.hex('#ffd60a'),
-    low:      chalk.hex('#48cae4'),
-    ok:       chalk.hex('#34d399'),
+    high: chalk.hex('#ff9f1c').bold,
+    medium: chalk.hex('#ffd60a'),
+    low: chalk.hex('#48cae4'),
+    ok: chalk.hex('#34d399'),
   };
   const SEV_ICON = { critical: '✗', high: '!', medium: '~', low: '·', ok: '✓' };
 
@@ -462,10 +465,10 @@ async function mobileAuditFlow() {
       );
     },
     onModuleComplete({ name, result, index, total, ms }) {
-      const sev  = result.severity || 'ok';
+      const sev = result.severity || 'ok';
       const icon = SEV_ICON[sev] || '·';
-      const col  = SEV_COLOR[sev] || (x => x);
-      const cnt  = result.findings?.length || 0;
+      const col = SEV_COLOR[sev] || (x => x);
+      const cnt = result.findings?.length || 0;
       const fStr = cnt > 0 ? colors.dim(` — ${cnt} hallazgo${cnt > 1 ? 's' : ''}`) : '';
       process.stdout.write('\x1b[2K'); // clear line
       console.log(
@@ -495,10 +498,10 @@ async function mobileAuditFlow() {
   console.log('');
 
   // Risk score bar
-  const barLen  = 30;
-  const filled  = Math.round((riskScore / 100) * barLen);
-  const barCol  = riskScore >= 70 ? chalk.hex('#ff2d55') : riskScore >= 40 ? chalk.hex('#ff9f1c') : chalk.hex('#34d399');
-  const bar     = barCol('█'.repeat(filled)) + colors.dim('░'.repeat(barLen - filled));
+  const barLen = 30;
+  const filled = Math.round((riskScore / 100) * barLen);
+  const barCol = riskScore >= 70 ? chalk.hex('#ff2d55') : riskScore >= 40 ? chalk.hex('#ff9f1c') : chalk.hex('#34d399');
+  const bar = barCol('█'.repeat(filled)) + colors.dim('░'.repeat(barLen - filled));
   console.log(`  ${colors.dim('Risk Score')}  ${bar}  ${barCol.bold(riskScore + '/100')}`);
   console.log('');
 
@@ -524,11 +527,11 @@ async function mobileAuditFlow() {
       for (const f of r.findings) {
         const fc = SEV_COLOR[f.severity] || (x => x);
         console.log(`    ${fc(SEV_ICON[f.severity] || '·')} ${fc.bold(f.title)}`);
-        if (f.file)        console.log(`      ${colors.dim('file')}  ${colors.accent(f.file)}${f.line ? colors.dim(':' + f.line) : ''}`);
+        if (f.file) console.log(`      ${colors.dim('file')}  ${colors.accent(f.file)}${f.line ? colors.dim(':' + f.line) : ''}`);
         if (f.description) console.log(`      ${colors.dim(f.description)}`);
-        if (f.fix)         console.log(`      ${chalk.hex('#34d399')('fix')}   ${f.fix}`);
-        if (f.cve)         console.log(`      ${colors.dim('ref')}   ${colors.dim(f.cve)}`);
-        if (f.code)        console.log(`      ${colors.dim('›')} ${chalk.hex('#a78bfa')(f.code.trim())}`);
+        if (f.fix) console.log(`      ${chalk.hex('#34d399')('fix')}   ${f.fix}`);
+        if (f.cve) console.log(`      ${colors.dim('ref')}   ${colors.dim(f.cve)}`);
+        if (f.code) console.log(`      ${colors.dim('›')} ${chalk.hex('#a78bfa')(f.code.trim())}`);
         console.log('');
       }
     }
@@ -552,18 +555,18 @@ async function mobileAuditFlow() {
   const reportsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'reports');
   if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
 
-  const ts         = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const projName   = path.basename(flutterRoot);
-  const filename   = `${projName}_mobile_${ts}.json`;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const projName = path.basename(flutterRoot);
+  const filename = `${projName}_mobile_${ts}.json`;
   const reportPath = path.join(reportsDir, filename);
 
   const report = {
     meta: {
-      engine:      'flutter',
+      engine: 'flutter',
       projectRoot: flutterRoot,
-      modules:     selectedMods,
+      modules: selectedMods,
       generatedAt: new Date().toISOString(),
-      tool:        'Fractia v3.0.0',
+      tool: 'Fractia v3.0.0',
     },
     summary: {
       riskScore,
@@ -594,7 +597,7 @@ async function ensureGitHubToken() {
   function saveToEnv(key, value) {
     const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '.env');
     let content = '';
-    try { content = readFileSync(envPath, 'utf8'); } catch {}
+    try { content = readFileSync(envPath, 'utf8'); } catch { }
     const lines = content.split('\n');
     const idx = lines.findIndex(l => l.startsWith(`${key}=`));
     if (idx >= 0) lines[idx] = `${key}=${value}`; else lines.push(`${key}=${value}`);
@@ -645,15 +648,15 @@ async function autoFixFlow() {
   // Run audit keeping raw results (with _codeSnippets)
   const { ALL_MODULES: allMods } = await import('./engines/codeAudit.js');
   const AUDITORS_RAW = {
-    auth:    () => import('./auditors/auth.js'),
-    api:     () => import('./auditors/api.js'),
-    sql:     () => import('./auditors/sql.js'),
-    xss:     () => import('./auditors/xss.js'),
+    auth: () => import('./auditors/auth.js'),
+    api: () => import('./auditors/api.js'),
+    sql: () => import('./auditors/sql.js'),
+    xss: () => import('./auditors/xss.js'),
     secrets: () => import('./auditors/secrets.js'),
     headers: () => import('./auditors/headers.js'),
-    bots:    () => import('./auditors/bots.js'),
-    crypto:  () => import('./auditors/crypto.js'),
-    logs:    () => import('./auditors/logs.js'),
+    bots: () => import('./auditors/bots.js'),
+    crypto: () => import('./auditors/crypto.js'),
+    logs: () => import('./auditors/logs.js'),
   };
 
   const rawResults = [];
@@ -696,13 +699,13 @@ async function autoFixFlow() {
     githubRepo,
     githubToken: token,
     hooks: {
-      onFileStart:   ({ file, count }) => process.stdout.write(`  ${chalk.hex('#c084fc')('◌')} Corrigiendo ${colors.text(file)}  ${colors.dim(count + ' findings')}…\r`),
-      onFileFixed:   ({ file })        => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#34d399')('✓')} ${colors.text(file)}  ${colors.dim('corregido')}`); },
-      onFileFailed:  ({ file, error }) => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#ff2d55')('✗')} ${colors.text(file)}  ${colors.dim(error)}`); },
-      onCommit:      ({ branch })      => console.log(`\n  ${chalk.hex('#c084fc')('▸')} Branch creado: ${colors.accent(branch)}`),
-      onPR:          ({ url })         => console.log(`  ${chalk.hex('#c084fc')('▸')} PR abierto:    ${chalk.hex('#38bdf8').underline(url)}`),
-      onPushFailed:  ({ error })       => console.log(`  ${chalk.hex('#ff9f1c')('!')} Push falló: ${colors.dim(error)}`),
-      onSkip:        ({ reason })      => console.log(`  ${colors.dim('ℹ')} ${reason}`),
+      onFileStart: ({ file, count }) => process.stdout.write(`  ${chalk.hex('#c084fc')('◌')} Corrigiendo ${colors.text(file)}  ${colors.dim(count + ' findings')}…\r`),
+      onFileFixed: ({ file }) => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#34d399')('✓')} ${colors.text(file)}  ${colors.dim('corregido')}`); },
+      onFileFailed: ({ file, error }) => { process.stdout.write('\x1b[2K'); console.log(`  ${chalk.hex('#ff2d55')('✗')} ${colors.text(file)}  ${colors.dim(error)}`); },
+      onCommit: ({ branch }) => console.log(`\n  ${chalk.hex('#c084fc')('▸')} Branch creado: ${colors.accent(branch)}`),
+      onPR: ({ url }) => console.log(`  ${chalk.hex('#c084fc')('▸')} PR abierto:    ${chalk.hex('#38bdf8').underline(url)}`),
+      onPushFailed: ({ error }) => console.log(`  ${chalk.hex('#ff9f1c')('!')} Push falló: ${colors.dim(error)}`),
+      onSkip: ({ reason }) => console.log(`  ${colors.dim('ℹ')} ${reason}`),
     },
   });
 
@@ -789,7 +792,7 @@ async function reviewPRFlow() {
   let reviewResult;
   try {
     reviewResult = await reviewPR({
-      repo:        repoAns.trim(),
+      repo: repoAns.trim(),
       prNumber,
       githubToken: token,
       postReview,
@@ -870,13 +873,13 @@ async function main() {
   // fractia attack --target URL --profile PROFILE [--login-path PATH ...]
   // fractia review-pr --repo owner/repo --pr NUMBER [--dry-run]
   if (cliArg === 'review-pr') {
-    const argv     = process.argv.slice(3);
-    const getFlag  = (flag) => { const i = argv.indexOf(flag); return i !== -1 ? argv[i + 1] : undefined; };
-    const hasFlag  = (flag) => argv.includes(flag);
-    const repo     = getFlag('--repo');
-    const prNum    = getFlag('--pr') ? parseInt(getFlag('--pr'), 10) : NaN;
-    const dryRun   = hasFlag('--dry-run');
-    const token    = getFlag('--token') || config.githubToken;
+    const argv = process.argv.slice(3);
+    const getFlag = (flag) => { const i = argv.indexOf(flag); return i !== -1 ? argv[i + 1] : undefined; };
+    const hasFlag = (flag) => argv.includes(flag);
+    const repo = getFlag('--repo');
+    const prNum = getFlag('--pr') ? parseInt(getFlag('--pr'), 10) : NaN;
+    const dryRun = hasFlag('--dry-run');
+    const token = getFlag('--token') || config.githubToken;
 
     if (!repo || !prNum) {
       console.log('');
@@ -898,13 +901,13 @@ async function main() {
       const result = await _reviewPR({
         repo, prNumber: prNum, githubToken: token, postReview: !dryRun,
         hooks: {
-          onInfo:           ({ title, author, files, auditing }) => title && console.log(`  PR: ${title} by ${author} — ${auditing}/${files} archivos auditables`),
+          onInfo: ({ title, author, files, auditing }) => title && console.log(`  PR: ${title} by ${author} — ${auditing}/${files} archivos auditables`),
           onFileDownloaded: ({ file }) => process.stdout.write(`  ↓ ${file}\r`),
           onModuleComplete: ({ mod, result: r }) => {
             process.stdout.write('\x1b[2K');
             console.log(`  ${r.severity === 'ok' ? '✓' : '!'} ${mod}  ${r.findings.length} findings`);
           },
-          onReviewPosted:   ({ url, event }) => console.log(`\n  Review: ${event}\n  ${url}`),
+          onReviewPosted: ({ url, event }) => console.log(`\n  Review: ${event}\n  ${url}`),
         },
       });
       console.log('');
@@ -922,7 +925,7 @@ async function main() {
       const i = argv.indexOf(flag);
       return i !== -1 ? argv[i + 1] : undefined;
     };
-    const target  = getFlag('--target');
+    const target = getFlag('--target');
     const profile = getFlag('--profile');
     if (!target || !profile) {
       console.log('');
@@ -932,16 +935,16 @@ async function main() {
       process.exit(1);
     }
     const optsRaw = {
-      loginPath:    getFlag('--login-path'),
+      loginPath: getFlag('--login-path'),
       bodyTemplate: getFlag('--body'),
-      mode:         getFlag('--mode'),
-      formIndex:    getFlag('--form-index') ? parseInt(getFlag('--form-index'), 10) : undefined,
-      requests:     getFlag('--requests')   ? parseInt(getFlag('--requests'), 10)   : undefined,
-      duration:     getFlag('--duration')   ? parseInt(getFlag('--duration'), 10)   : undefined,
-      connections:  getFlag('--connections') ? parseInt(getFlag('--connections'), 10) : undefined,
-      formAction:   getFlag('--form-action'),
-      fields:       getFlag('--fields'),
-      method:       getFlag('--method'),
+      mode: getFlag('--mode'),
+      formIndex: getFlag('--form-index') ? parseInt(getFlag('--form-index'), 10) : undefined,
+      requests: getFlag('--requests') ? parseInt(getFlag('--requests'), 10) : undefined,
+      duration: getFlag('--duration') ? parseInt(getFlag('--duration'), 10) : undefined,
+      connections: getFlag('--connections') ? parseInt(getFlag('--connections'), 10) : undefined,
+      formAction: getFlag('--form-action'),
+      fields: getFlag('--fields'),
+      method: getFlag('--method'),
     };
     // Strip undefined values so engine defaults (meta.defaultOpts) are not overridden
     const opts = Object.fromEntries(Object.entries(optsRaw).filter(([, v]) => v !== undefined));
@@ -964,7 +967,7 @@ async function main() {
     const { writeFileSync, readFileSync } = await import('fs');
     const envPath = path.join(__dirname, '.env');
     let content = '';
-    try { content = readFileSync(envPath, 'utf8'); } catch {}
+    try { content = readFileSync(envPath, 'utf8'); } catch { }
     const lines = content.split('\n');
     const idx = lines.findIndex(l => l.startsWith('PROJECT_ROOT='));
     if (idx >= 0) lines[idx] = `PROJECT_ROOT=${config.projectRoot}`;
