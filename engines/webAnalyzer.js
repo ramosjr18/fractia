@@ -15,9 +15,34 @@ export const meta = {
 // ── Technology Fingerprints ──────────────────────────────────────────────────
 const FINGERPRINTS = [
   // CMS
-  { name: 'WordPress',      cat: 'cms',       pattern: /wp-content|wp-includes/i,         src: 'html' },
-  { name: 'Ghost',          cat: 'cms',       pattern: /ghost-sdk/i,                       src: 'html' },
-  { name: 'Joomla',         cat: 'cms',       pattern: /joomla/i,                          src: 'meta' },
+  { 
+    name: 'WordPress',      
+    cat: 'cms',       
+    pattern: /wp-content|wp-includes/i,         
+    src: 'html',
+    versionPatterns: [
+      { regex: /<meta\s+name=["']generator["']\s+content=["']WordPress\s+([0-9.]+)/i, group: 1 },
+      { regex: /[?&]ver=([0-9.]+(?:\-[a-z0-9]+)?)/i, group: 1 }
+    ]
+  },
+  { 
+    name: 'Ghost',          
+    cat: 'cms',       
+    pattern: /ghost-sdk/i,                       
+    src: 'html',
+    versionPatterns: [
+      { regex: /<meta\s+name=["']generator["']\s+content=["']Ghost\s+([0-9.]+)/i, group: 1 }
+    ]
+  },
+  { 
+    name: 'Joomla',         
+    cat: 'cms',       
+    pattern: /joomla/i,                          
+    src: 'meta',
+    versionPatterns: [
+      { regex: /<meta\s+name=["']generator["']\s+content=["']Joomla!\s+-\s+Open\s+Source\s+Content\s+Management\s+-\s+([0-9.]+)/i, group: 1 }
+    ]
+  },
   { name: 'Drupal',         cat: 'cms',       pattern: /Drupal/i,                          src: 'meta' },
   { name: 'Hugo',           cat: 'cms',       pattern: /Hugo/i,                            src: 'meta' },
   { name: 'Wix',            cat: 'cms',       pattern: /wix\.com/i,                        src: 'html' },
@@ -60,22 +85,30 @@ const FINGERPRINTS = [
 export async function run({ target, opts = {}, hooks = {} }) {
   const timeout = opts.timeout || 10000;
   const urlObj = new URL(target);
+  const baseUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.port ? ':' + urlObj.port : ''}`;
 
   hooks.onPhase?.('fetching', `Extrayendo contenido de ${target}...`);
 
-  const { status, headers, body } = await fetchFull(target, timeout);
+  // Fetch main page, robots.txt and sitemap.xml in parallel
+  const [pageRes, robotsRes, sitemapRes] = await Promise.all([
+    fetchFull(target, timeout),
+    fetchFull(`${baseUrl}/robots.txt`, timeout),
+    fetchFull(`${baseUrl}/sitemap.xml`, timeout),
+  ]);
 
-  if (status === 0) {
-    throw new Error('No se pudo conectar con el objetivo.');
+  if (pageRes.status === 0) {
+    throw new Error('No se pudo conectar con el objetivo principal.');
   }
 
-  hooks.onPhase?.('analyzing', 'Analizando tecnologías detectadas...');
+  hooks.onPhase?.('analyzing', 'Analizando tecnologías y activos...');
 
+  const { body, headers } = pageRes;
   const detected = [];
   const metaTags = extractMeta(body);
 
   for (const fp of FINGERPRINTS) {
     let match = false;
+    let version = null;
 
     if (fp.src === 'html' && fp.pattern.test(body)) {
       match = true;
@@ -86,22 +119,51 @@ export async function run({ target, opts = {}, hooks = {} }) {
     }
 
     if (match) {
-      detected.push({ name: fp.name, category: fp.cat });
+      // Try version detection
+      if (fp.versionPatterns) {
+        for (const vp of fp.versionPatterns) {
+          const vMatch = vp.regex.exec(body);
+          if (vMatch && vMatch[vp.group]) {
+            version = vMatch[vp.group];
+            break;
+          }
+        }
+      }
+      detected.push({ name: fp.name, category: fp.cat, version });
     }
   }
 
-  // Deduplicate and group
+  // Recon Assets analysis
+  const reconAssets = {
+    robots: {
+      found: robotsRes.status === 200,
+      size: robotsRes.body.length,
+      sitemaps: (robotsRes.body.match(/Sitemap:\s*(.+)/gi) || []).map(s => s.replace(/Sitemap:\s*/i, '').trim()),
+      disallowCount: (robotsRes.body.match(/Disallow:\s*(.+)/gi) || []).length,
+    },
+    sitemap: {
+      found: sitemapRes.status === 200,
+      size: sitemapRes.body.length,
+      isIndex: sitemapRes.body.includes('<sitemapindex'),
+    }
+  };
+
+  // Group by category, including version if present
   const grouped = detected.reduce((acc, curr) => {
     if (!acc[curr.category]) acc[curr.category] = [];
-    if (!acc[curr.category].includes(curr.name)) acc[curr.category].push(curr.name);
+    const entry = curr.version ? `${curr.name} (${curr.version})` : curr.name;
+    if (!acc[curr.category].includes(entry)) {
+      acc[curr.category].push(entry);
+    }
     return acc;
   }, {});
 
   return {
     target,
-    status,
+    status: pageRes.status,
     timestamp: new Date().toISOString(),
     technologies: grouped,
+    reconAssets,
     raw: {
       headers,
       metaCount: metaTags.length,

@@ -1328,6 +1328,48 @@ function renderWebAnalyzerReport(data) {
   `;
   container.appendChild(header);
 
+  // Recon Assets Section
+  if (data.reconAssets) {
+    const assetCard = document.createElement('div');
+    assetCard.className = 'module-result';
+    const ra = data.reconAssets;
+    
+    const getStatusHTML = (found, extra = '') => found 
+      ? `<span style="color:#00f5a0;font-weight:700;">ENCONTRADO</span> ${extra}`
+      : `<span style="color:#ff4d4d;">NO ENCONTRADO</span>`;
+
+    assetCard.innerHTML = `
+      <div class="module-result-header" style="cursor:default">
+        <div class="module-result-left">
+          <span class="severity-badge" style="background:#ae63e422; color:#ae63e4; border:1px solid #ae63e444">ASSETS</span>
+          <span class="module-name">Activos de Reconocimiento</span>
+        </div>
+      </div>
+      <div class="module-result-body open" style="padding:12px; font-family:var(--font-mono); font-size:12px; line-height:1.6;">
+        <div style="margin-bottom:8px; display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:4px;">
+          <span style="color:var(--text-dim)">robots.txt</span>
+          <span>${getStatusHTML(ra.robots.found, `(${ra.robots.size} bytes)`)}</span>
+        </div>
+        ${ra.robots.found ? `
+          <div style="margin-left:12px; font-size:11px; color:var(--text-dim);">
+            <div>&bull; Reglas Disallow: ${ra.robots.disallowCount}</div>
+            <div>&bull; Sitemaps detectados: ${ra.robots.sitemaps.length || 0}</div>
+          </div>
+        ` : ''}
+        <div style="margin-top:8px; display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:4px;">
+          <span style="color:var(--text-dim)">sitemap.xml</span>
+          <span>${getStatusHTML(ra.sitemap.found, `(${ra.sitemap.size} bytes)`)}</span>
+        </div>
+        ${ra.sitemap.found ? `
+          <div style="margin-left:12px; font-size:11px; color:var(--text-dim);">
+            <div>&bull; Tipo: ${ra.sitemap.isIndex ? 'Sitemap Index' : 'Sitemap Standard'}</div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    container.appendChild(assetCard);
+  }
+
   const categories = {
     cms:       { label: 'CMS / Plataforma',    color: '#ff9f1c' },
     framework: { label: 'Frameworks JS',       color: '#a78bfa' },

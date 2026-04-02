@@ -67,11 +67,34 @@ export async function runWebAnalyzerFlow() {
       if (techs && techs.length > 0) {
         foundAny = true;
         console.log(`  ${chalk.hex(meta.color).bold(meta.label)}`);
-        for (const t of techs) {
-          console.log(`    ${colors.dim('·')} ${chalk.hex('#c8d6f0')(t)}`);
+        for (const techName of techs) {
+          console.log(`    ${colors.dim('·')} ${chalk.hex('#c8d6f0')(techName)}`);
         }
         console.log('');
       }
+    }
+
+    // Recon Assets Section
+    const assets = result.reconAssets;
+    if (assets) {
+      console.log(`  ${chalk.hex('#ae63e4').bold('Activos de Reconocimiento')}`);
+      
+      const robotsStatus = assets.robots.found 
+        ? `${chalk.hex('#00f5a0')('Encontrado')} (${assets.robots.size} bytes)` 
+        : chalk.hex('#ff4d4d')('No encontrado');
+      console.log(`    ${colors.dim('·')} ${colors.text('robots.txt:')} ${robotsStatus}`);
+      if (assets.robots.found) {
+        console.log(`      ${colors.dim('└')} ${colors.dim('Disallow Rules:')} ${assets.robots.disallowCount}`);
+        if (assets.robots.sitemaps.length > 0) {
+          console.log(`      ${colors.dim('└')} ${colors.dim('Sitemaps:')} ${assets.robots.sitemaps.length}`);
+        }
+      }
+
+      const sitemapStatus = assets.sitemap.found 
+        ? `${chalk.hex('#00f5a0')('Encontrado')} (${assets.sitemap.size} bytes)${assets.sitemap.isIndex ? ' [Index]' : ''}` 
+        : chalk.hex('#ff4d4d')('No encontrado');
+      console.log(`    ${colors.dim('·')} ${colors.text('sitemap.xml:')} ${sitemapStatus}`);
+      console.log('');
     }
 
     if (!foundAny) {
