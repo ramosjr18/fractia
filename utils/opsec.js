@@ -4,6 +4,7 @@ import os from 'os';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { config } from '../config.js';
+import torManager from './torManager.js';
 
 /**
  * Capa 1: Obtener IP Pública (con soporte opcional de proxy)
@@ -18,11 +19,18 @@ export async function getPublicIP(proxyUrl = config.proxy) {
         headers: { 'User-Agent': config.userAgent }
       };
 
-      if (proxyUrl) {
-        if (proxyUrl.startsWith('socks')) {
-          options.agent = new SocksProxyAgent(proxyUrl);
+      let currentProxy = proxyUrl;
+      
+      // Si Tor está activo, sobreescribimos el proxy a menos que se pase uno explícitamente
+      if (torManager.getStatus().active && !proxyUrl) {
+        currentProxy = `socks5h://127.0.0.1:${torManager.socksPort}`;
+      }
+
+      if (currentProxy) {
+        if (currentProxy.startsWith('socks')) {
+          options.agent = new SocksProxyAgent(currentProxy);
         } else {
-          options.agent = new HttpsProxyAgent(proxyUrl);
+          options.agent = new HttpsProxyAgent(currentProxy);
         }
       }
 
@@ -139,6 +147,7 @@ export async function runOpSecCheck() {
     ip: ip || 'Desconocida',
     fingerprint,
     mac,
+    tor: torManager.getStatus(),
     issues,
     timestamp: new Date().toISOString()
   };

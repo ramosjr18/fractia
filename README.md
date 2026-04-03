@@ -79,11 +79,28 @@ npm start
 node fractia.js attack --target http://api.local --profile slowloris --duration 60
 ```
 
-### Web Analyzer (Recon)
+### Sandbox Lab (Entorno Aislado)
 ```bash
-# Iniciar análisis interactivo de un sitio web
-node fractia.js
-# Seleccionar opción [7] Web Analyzer
+# Administrar el laboratorio de pruebas (up, down, shell, status, build)
+node fractia.js sandbox [accion]
+
+# Ejemplo: Levantar todos los targets vulnerables
+node fractia.js sandbox up
+
+# Ejemplo: Abrir terminal en el contenedor de herramientas
+node fractia.js sandbox shell
+```
+
+### OpSec & Tor Stealth Bridge
+```bash
+# Control de anonimato y red Tor
+node fractia.js tor [--start | --stop | --rotate | --status]
+
+# Ejemplo: Activar ruteo anónimo
+node fractia.js tor --start
+
+# Ejemplo: Cambiar IP de salida (Nueva Identidad)
+node fractia.js tor --rotate
 ```
 
 ---

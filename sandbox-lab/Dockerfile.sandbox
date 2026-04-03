@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Red y reconocimiento
     nmap netcat-openbsd whois dnsutils \
     traceroute iputils-ping net-tools iproute2 \
+    # Anonimato (OpSec)
+    tor proxychains4 \
     # Análisis web
     nikto whatweb dirb \
     # Ataque / auth

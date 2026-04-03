@@ -36,7 +36,9 @@ import { store } from './cli/configStore.js';
 import { runAttackCLI, runAttackInteractive } from './cli/attackFlow.js';
 import { runWebAnalyzerFlow } from './cli/webAnalyzerFlow.js';
 import { runOpSecFlow } from './cli/opsecFlow.js';
+import { runSandboxFlow } from './cli/sandboxFlow.js';
 import { runOpSecCheck } from './utils/opsec.js';
+import torManager from './utils/torManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -337,32 +339,7 @@ async function infraAuditFlow() {
 
 // ── Sandbox Lab flow ──────────────────────────────────────────────────────────
 async function launchSandbox() {
-  const sandboxScript = path.join(__dirname, 'sandbox-lab', 'sandbox.sh');
-
-  if (!existsSync(sandboxScript)) {
-    console.log('');
-    console.log(chalk.hex('#ff2d55').bold('✗ error') + colors.text(` No se encontró el script en: ${sandboxScript}`));
-    console.log('');
-    await ask(colors.dim('  Presiona Enter para volver... '));
-    return;
-  }
-
-  // Asegura que el script tenga permisos de ejecución
-  const chmod = spawn('chmod', ['+x', sandboxScript]);
-  await new Promise(resolve => chmod.on('close', resolve));
-
-  clearScreen();
-  // Lanza sandbox.sh pasando el control total al proceso hijo
-  const sandbox = spawn('bash', [sandboxScript], {
-    stdio: 'inherit',
-    cwd: path.join(__dirname, 'sandbox-lab'),
-  });
-
-  return new Promise((resolve) => {
-    sandbox.on('close', (code) => {
-      resolve(code);
-    });
-  });
+  return runSandboxFlow();
 }
 
 // ── Config menu ──────────────────────────────────────────────────────────────
@@ -1044,6 +1021,38 @@ async function main() {
     const opts = Object.fromEntries(Object.entries(optsRaw).filter(([, v]) => v !== undefined));
     await runAttackCLI({ target, profile, opts });
     process.exit(0);
+  }
+
+  // ── New Integrated Subcommands ─────────────────────────────────────────────
+  if (cliArg === 'sandbox') {
+    const action = process.argv[3];
+    await runSandboxFlow(action);
+    process.exit(0);
+  }
+
+  if (cliArg === 'tor') {
+    const action = process.argv[3]; // --start, --stop, --rotate, --status
+    if (action === '--start') {
+      console.log(`\n  ${chalk.hex('#ae63e4')('◌')} Activando Tor Stealth Bridge…\n`);
+      const success = await torManager.start();
+      if (success) console.log(`\n  ${chalk.hex('#00f5a0')('✓')} Tor activo en puerto 9050.`);
+      process.exit(0);
+    } else if (action === '--stop') {
+      torManager.stop();
+      process.exit(0);
+    } else if (action === '--rotate') {
+      console.log(`\n  ${chalk.hex('#ae63e4')('◌')} Solicitando nueva identidad…\n`);
+      await torManager.renewIdentity();
+      process.exit(0);
+    } else if (action === '--status') {
+      const s = torManager.getStatus();
+      console.log(`\n  Tor Active: ${s.active ? chalk.hex('#00f5a0')('YES') : chalk.hex('#ff2d55')('NO')}`);
+      if (s.active) console.log(`  SOCKS Port: ${s.port}`);
+      process.exit(0);
+    } else {
+      console.log(`\n  ${t.fail('Uso: fractia tor [--start | --stop | --rotate | --status]')}\n`);
+      process.exit(1);
+    }
   }
 
   if (cliArg && cliArg !== '--') {

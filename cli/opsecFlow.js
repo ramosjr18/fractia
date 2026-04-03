@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { divider, colors, t, box } from './theme.js';
 import { config } from '../config.js';
 import { runOpSecCheck, getPublicIP } from '../utils/opsec.js';
+import torManager from '../utils/torManager.js';
 import { writeFileSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -51,6 +52,9 @@ export async function runOpSecFlow() {
   console.log(`  ${chalk.hex('#ae63e4').bold('Capa 1 — IP Pública')}`);
   console.log(`    IP:      ${chalk.bold(status.ip)}`);
   console.log(`    Proxy:   ${config.proxy ? chalk.hex('#00f5a0')(config.proxy) : colors.dim('No configurado')}`);
+  
+  const torStatus = status.tor.active ? chalk.hex('#00f5a0')('Activo (Puerto 9050)') : colors.dim('Inactivo');
+  console.log(`    Tor:     ${torStatus}`);
   console.log(`    Stealth: ${config.stealthMode ? chalk.hex('#00f5a0')('Activo') : colors.dim('Inactivo')}`);
   console.log('');
 
@@ -78,6 +82,10 @@ export async function runOpSecFlow() {
 
   console.log(`  ${divider(52)}`);
   console.log(t.option('[p]', 'Configurar Proxy / SOCKS5'));
+  console.log(t.option('[t]', status.tor.active ? 'DETENER Tor Stealth Bridge' : 'ACTIVAR Tor Stealth Bridge'));
+  if (status.tor.active) {
+    console.log(t.option('[n]', 'Nueva Identidad Tor (Rotar IP)'));
+  }
   console.log(t.option('[u]', 'Cambiar User-Agent'));
   console.log(t.option('[s]', `Modo Stealth ${config.stealthMode ? chalk.hex('#00f5a0')('[ON]') : colors.dim('[OFF]')}`));
   console.log(t.option('[b]', 'Establecer esta IP como "Base" (Home)'));
@@ -89,6 +97,22 @@ export async function runOpSecFlow() {
 
   switch (ans.toLowerCase()) {
     case 'p': await configureProxy(); break;
+    case 't': 
+      if (status.tor.active) {
+        torManager.stop();
+      } else {
+        process.stdout.write(`  ${chalk.hex('#ae63e4')('◌')} Lanzando Tor Stealth Bridge…\r`);
+        await torManager.start();
+        process.stdout.write('\r\x1b[2K');
+      }
+      break;
+    case 'n':
+      if (status.tor.active) {
+        process.stdout.write(`  ${chalk.hex('#ae63e4')('◌')} Rotando IP de salida…\r`);
+        await torManager.renewIdentity();
+        process.stdout.write('\r\x1b[2K');
+      }
+      break;
     case 'u': await configureUA(); break;
     case 's': 
       config.stealthMode = !config.stealthMode;

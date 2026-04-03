@@ -261,6 +261,23 @@ FLUTTER_PROJECT_ROOT=/ruta/al/proyecto/flutter
 | P2 | crypto.dart.js | Patrones criptograficos debiles |
 | P3 | state.dart.js | State management post-logout |
 
+## Módulos de OpSec & Anonimato (IMPLEMENTADO V3.0)
+
+Se ha integrado un motor de anonimato profesional para auditorías DAST, permitiendo ruteo anónimo y evasión de bloqueos.
+
+### Características
+- **Tor Stealth Bridge**: Proxy SOCKS5 local (9050) auto-gestionado.
+- **Rotación de Identidad**: Comando `tor --rotate` para obtener nueva IP de salida al instante.
+- **OS/TTL Fingerprinting**: Spoofing de TTL (64 vs 128) para ocultar el OS real.
+- **User-Agent Spoofing**: Rotación de cabeceras de navegador reales.
+- **Sandbox Integrado**: Laboratorio Docker con targets vulnerables y herramientas de ataque pre-configuradas.
+
+### Comandos CLI
+```bash
+fractia sandbox [up|down|shell|status|build]
+fractia tor [--start|--stop|--rotate|--status]
+```
+
 ---
 
 ## Otras ideas futuras
