@@ -289,3 +289,32 @@ Analogo al Code Engine pero para backends Python:
 
 ### Report PDF
 Generar un PDF profesional con el reporte completo para entregar a clientes o stakeholders. Usar la skill de PDF de Fractia para esto.
+
+---
+
+## VPN & Anonymity Engine (OpSec)
+
+#### 1. El camino de Tor (The Onion Router) — "Extremo y Gratis"
+Podemos integrar un módulo en Fractia que use la red Tor.
+- **Dificultad**: Media. Ya tenemos la lógica de proxies en `utils/opsec.js`. Solo hay que instalar el servicio `tor` localmente y configurar Fractia para que rutee todo a través del puerto 9050.
+- **Costo**: $0.
+- **Anonimato**: El más alto posible. Nadie sabe quién eres (ni siquiera el nodo de salida).
+
+#### 2. VPN Gate (Proyecto Académico SoftEther) — "Voluntariado"
+Existe un proyecto de la Universidad de Tsukuba donde miles de voluntarios ofrecen sus servidores como nodos VPN gratuitos.
+- **Dificultad**: Media-Alta. Podemos codear un **Scraper** en Fractia que descargue la lista pública de servidores de VPN Gate diariamente, elija uno al azar y conecte mediante OpenVPN.
+- **Costo**: $0.
+- **Anonimato**: Bueno, pero dependes de la buena fe del voluntario que hostea el nodo (podría guardar logs).
+
+#### 3. Oracle Cloud / GCP Free Tier — "IP Estática Gratis"
+Si tienes una cuenta de Oracle Cloud (por ejemplo), te dan 2 servidores gratis para siempre.
+- **Dificultad**: Baja. Simplemente codeamos el script de instalación de WireGuard para tu servidor gratuito y Fractia lo usa como nodo fijo.
+- **Costo**: $0 (pero requiere tarjeta para verificar identidad en el registro).
+
+---
+
+### [IMPLEMENTANDO] Tor Stealth Bridge
+Propuesta para anonimato gratuito, abierto y "hecho en casa":
+1. **Instalación Silenciosa**: Detectar o instalar `tor` en el host o sandbox.
+2. **SOCKS5 Wrapper**: Codear un túnel que envuelva todos los ataques de Fractia (nmap, nuclei, zap, etc).
+3. **Rotación Automática**: Cambiar la identidad de Tor (IP de salida) cada X minutos o bajo demanda.
