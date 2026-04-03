@@ -2,6 +2,9 @@
  * Web Analyzer Engine
  * Identifica el stack tecnológico de un sitio web.
  */
+import { config } from '../config.js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
@@ -178,15 +181,26 @@ function fetchFull(url, timeout) {
     try {
       const parsed = new URL(url);
       const mod = parsed.protocol === 'https:' ? https : http;
+      
+      let agent;
+      if (config.proxy) {
+        if (config.proxy.startsWith('socks')) {
+          agent = new SocksProxyAgent(config.proxy);
+        } else {
+          agent = new HttpsProxyAgent(config.proxy);
+        }
+      }
+
       const options = {
         hostname: parsed.hostname,
         port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
         path: parsed.pathname + parsed.search,
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'User-Agent': config.userAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         },
+        agent,
         rejectUnauthorized: false,
         timeout,
       };

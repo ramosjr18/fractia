@@ -35,6 +35,8 @@ import { renderResults, promptDetailView } from './cli/resultRenderer.js';
 import { store } from './cli/configStore.js';
 import { runAttackCLI, runAttackInteractive } from './cli/attackFlow.js';
 import { runWebAnalyzerFlow } from './cli/webAnalyzerFlow.js';
+import { runOpSecFlow } from './cli/opsecFlow.js';
+import { runOpSecCheck } from './utils/opsec.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -176,6 +178,7 @@ async function mainMenu() {
   console.log(t.option('[6]', `Review PR     ${chalk.hex('#38bdf8').bold('Shift-Left')} ${colors.dim('audita un PR de GitHub antes del merge')}`));
   console.log(t.option('[7]', `Web Analyzer  ${chalk.hex('#00b4d8').bold('Recon')}      ${colors.dim('identifica stack: CMS, frameworks, librerías…')}`));
   console.log(t.option('[8]', `Lab Sandbox   ${chalk.hex('#f472b6').bold('Docker')}     ${colors.dim('entorno de pruebas con targets vulnerables')}`));
+  console.log(t.option('[9]', `OpSec / Anon  ${chalk.hex('#ae63e4').bold('Privacidad')} ${colors.dim('escudo de IP, proxy, user-agent y fingerprinting')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -193,6 +196,7 @@ async function mainMenu() {
     case '6': return reviewPRFlow();
     case '7': await runWebAnalyzerFlow(); return mainMenu();
     case '8': await launchSandbox(); return mainMenu();
+    case '9': await runOpSecFlow(); return mainMenu();
     case 'c': return configMenu();
     case 's': return serveFlow();
     case 'p': return changeProjectFlow();
@@ -921,6 +925,23 @@ async function reviewPRFlow() {
 async function attackFlow() {
   clearScreen();
   printHeader();
+
+  // OpSec Check
+  const opsec = await runOpSecCheck();
+  if (opsec.status === 'leaked') {
+    console.log(`  ${chalk.hex('#ff2d55').bold('╔══════════════════════════════════════════════════╗')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('║')}  ${chalk.bold('¡PELIGRO! TU IP REAL ESTÁ EXPUESTA')}            ${chalk.hex('#ff2d55').bold('║')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('╚══════════════════════════════════════════════════╝')}`);
+    console.log(`  IP Detectada: ${chalk.bold(opsec.ip)}`);
+    console.log(`  ${colors.dim('Se recomienda encarecidamente usar un Proxy o VPN.')}`);
+    console.log('');
+    const proceed = await ask(colors.warn('  ¿Deseas continuar bajo tu propio riesgo? (s/N): '));
+    if (proceed.toLowerCase() !== 's') {
+      console.log(`  ${t.fail('Operación abortada por seguridad.')}`);
+      return mainMenu();
+    }
+  }
+
   await runAttackInteractive();
   await ask(colors.dim('  Pulsa Enter para volver al menú... '));
   return mainMenu();

@@ -32,6 +32,12 @@ export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   aiProvider: process.env.AI_PROVIDER || '',   // 'claude' | 'openai' | 'none' — set at runtime
   githubToken: process.env.GITHUB_TOKEN || '',
+  
+  // OpSec & Stealth
+  proxy: process.env.FRACTIA_PROXY || '', // e.g. http://user:pass@1.2.3.4:8080 or socks5://...
+  userAgent: process.env.FRACTIA_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  stealthMode: process.env.FRACTIA_STEALTH === 'true',
+  baseIP: process.env.FRACTIA_BASE_IP || '', // User's real public IP to detect leaks
 };
 
 // No longer throws on missing PROJECT_ROOT — handled interactively by server.js

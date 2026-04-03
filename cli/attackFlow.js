@@ -10,6 +10,7 @@ import chalk from 'chalk';
 import { divider, colors, t, link } from './theme.js';
 import { runAttack, saveAttackReport, PROFILE_LIST } from '../engines/attack/index.js';
 import { checkZapSetup, findZapBinary, startZapDaemon, probeZapApi } from '../engines/attack/profiles/zapScan.js';
+import { runOpSecCheck } from '../utils/opsec.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -782,6 +783,22 @@ async function zapAskMode(apiPort, apiKey) {
  */
 export async function runAttackCLI({ target, profile, opts }) {
   printAttackWarning({ target, profile, opts });
+
+  // OpSec Check
+  const opsec = await runOpSecCheck();
+  if (opsec.status === 'leaked') {
+    console.log(`  ${chalk.hex('#ff2d55').bold('╔══════════════════════════════════════════════════╗')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('║')}  ${chalk.bold('¡PELIGRO! TU IP REAL ESTÁ EXPUESTA')}            ${chalk.hex('#ff2d55').bold('║')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('╚══════════════════════════════════════════════════╝')}`);
+    console.log(`  IP Detectada: ${chalk.bold(opsec.ip)}`);
+    console.log(`  ${colors.dim('Se recomienda encarecidamente usar un Proxy o VPN.')}`);
+    console.log('');
+    const proceed = await ask(colors.warn('  ¿Deseas continuar bajo tu propio riesgo? (s/N): '));
+    if (proceed.toLowerCase() !== 's') {
+      console.log(`  ${t.fail('Operación abortada por seguridad.')}`);
+      process.exit(0);
+    }
+  }
 
   const confirmed = await confirmAttack(target);
   if (!confirmed) {
