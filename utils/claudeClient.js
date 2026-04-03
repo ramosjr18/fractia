@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { truncate, discoverStructure } from './fileScanner.js';
+import { getProxyAgent } from './proxyAgent.js';
 
 const MAX_SNIPPET_LENGTH = 1500;
 const MAX_TOTAL_CONTEXT  = 8000;
@@ -13,7 +14,10 @@ const MAX_TOTAL_CONTEXT  = 8000;
 export async function enrichWithClaude(auditResults, depth) {
   if (!config.anthropicApiKey) return;
 
-  const client = new Anthropic({ apiKey: config.anthropicApiKey });
+  const client = new Anthropic({
+    apiKey: config.anthropicApiKey,
+    httpAgent: getProxyAgent()
+  });
 
   // Collect code snippets from auditors that have them
   const snippetParts = [];

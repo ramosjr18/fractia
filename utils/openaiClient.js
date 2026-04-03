@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config.js';
 import { truncate, discoverStructure } from './fileScanner.js';
+import { getProxyAgent } from './proxyAgent.js';
 
 const MAX_SNIPPET_LENGTH = 1500;
 const MAX_TOTAL_CONTEXT  = 8000;
@@ -13,7 +14,10 @@ const MAX_TOTAL_CONTEXT  = 8000;
 export async function enrichWithOpenAI(auditResults, depth) {
   if (!config.openaiApiKey) return;
 
-  const client = new OpenAI({ apiKey: config.openaiApiKey });
+  const client = new OpenAI({
+    apiKey: config.openaiApiKey,
+    httpAgent: getProxyAgent()
+  });
 
   // Collect code snippets from auditors that have them
   const snippetParts = [];

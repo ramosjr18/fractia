@@ -3,10 +3,7 @@
  * Identifica el stack tecnológico de un sitio web.
  */
 import { config } from '../config.js';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import http from 'http';
-import https from 'https';
+import { httpClient } from '../utils/httpClient.js';
 import { URL } from 'url';
 
 export const meta = {
@@ -177,47 +174,7 @@ export async function run({ target, opts = {}, hooks = {} }) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fetchFull(url, timeout) {
-  return new Promise(resolve => {
-    try {
-      const parsed = new URL(url);
-      const mod = parsed.protocol === 'https:' ? https : http;
-      
-      let agent;
-      if (config.proxy) {
-        if (config.proxy.startsWith('socks')) {
-          agent = new SocksProxyAgent(config.proxy);
-        } else {
-          agent = new HttpsProxyAgent(config.proxy);
-        }
-      }
-
-      const options = {
-        hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-        path: parsed.pathname + parsed.search,
-        method: 'GET',
-        headers: {
-          'User-Agent': config.userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        },
-        agent,
-        rejectUnauthorized: false,
-        timeout,
-      };
-
-      const req = mod.request(options, res => {
-        let data = '';
-        res.on('data', chunk => { data += chunk; });
-        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
-      });
-
-      req.on('error', () => resolve({ status: 0, headers: {}, body: '' }));
-      req.on('timeout', () => { req.destroy(); resolve({ status: 0, headers: {}, body: '' }); });
-      req.end();
-    } catch {
-      resolve({ status: 0, headers: {}, body: '' });
-    }
-  });
+  return httpClient.get(url, { timeout }).catch(() => ({ status: 0, headers: {}, body: '' }));
 }
 
 function extractMeta(html) {

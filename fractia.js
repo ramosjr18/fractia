@@ -164,6 +164,32 @@ async function ensureProjectSelected() {
   return false;
 }
 
+// ── Stealth / OpSec Guard ───────────────────────────────────────────────────
+async function ensureStealth() {
+  if (!config.stealthMode) return true;
+
+  console.log(`  ${chalk.hex('#ae63e4')('◌')} ${chalk.bold('OpSec Shielding')} activo. Verificando integridad de red…`);
+  const check = await runOpSecCheck();
+
+  if (check.status === 'fail' || check.leak) {
+    console.log(`\n  ${chalk.hex('#ff2d55').bold('╔══════════════════════════════════════════════════╗')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('║')}  ${chalk.bold('¡PELIGRO! POSIBLE FUGA DE IP DETECTADA')}        ${chalk.hex('#ff2d55').bold('║')}`);
+    console.log(`  ${chalk.hex('#ff2d55').bold('╚══════════════════════════════════════════════════╝')}`);
+    console.log(`  IP Detectada: ${chalk.bold(check.ip)}  |  IP Base: ${chalk.dim(config.baseIP || 'no definida')}`);
+    console.log(`  ${colors.dim('Tu identidad real podría estar expuesta al objetivo.')}`);
+    console.log('');
+    const proceed = await ask(colors.warn('  ¿Deseas ABORTAR por seguridad? [S/n]: '));
+    if (proceed.toLowerCase() !== 'n') {
+      console.log(`  ${colors.dim('Operación abortada.')}`);
+      return false;
+    }
+  }
+
+  process.stdout.write('\x1b[2K\r'); // Limpiar línea de verificación
+  console.log(`  ${chalk.hex('#34d399')('✓')} Red protegida. IP actual: ${chalk.cyan(check.ip)}`);
+  return true;
+}
+
 // ── Main menu ────────────────────────────────────────────────────────────────
 async function mainMenu() {
   clearScreen();
@@ -213,6 +239,7 @@ async function mainMenu() {
 // ── Code Audit flow ──────────────────────────────────────────────────────────
 async function codeAuditFlow() {
   if (!(await ensureProjectSelected())) return mainMenu();
+  if (!(await ensureStealth())) return mainMenu();
 
   clearScreen();
   printHeader();
@@ -293,6 +320,7 @@ async function codeAuditFlow() {
 // ── Infra Audit flow ─────────────────────────────────────────────────────────
 async function infraAuditFlow() {
   if (!(await ensureProjectSelected())) return mainMenu();
+  if (!(await ensureStealth())) return mainMenu();
 
   if (!isIronbaseAvailable()) {
     console.log('');
@@ -430,6 +458,7 @@ async function changeProjectFlow() {
 // ── Mobile Audit flow (Pilar D: Flutter/Dart) ────────────────────────────────
 async function mobileAuditFlow() {
   if (!(await ensureProjectSelected())) return mainMenu();
+  if (!(await ensureStealth())) return mainMenu();
 
   clearScreen();
   printHeader();
@@ -671,6 +700,7 @@ async function ensureGitHubToken() {
 // ── Auto-Fix flow (Pilar E) ───────────────────────────────────────────────────
 async function autoFixFlow() {
   if (!(await ensureProjectSelected())) return mainMenu();
+  if (!(await ensureStealth())) return mainMenu();
 
   clearScreen();
   printHeader();
@@ -794,6 +824,8 @@ async function autoFixFlow() {
 
 // ── Review PR flow (Pilar F: Shift-Left) ─────────────────────────────────────
 async function reviewPRFlow() {
+  if (!(await ensureStealth())) return mainMenu();
+
   clearScreen();
   printHeader();
 
@@ -900,24 +932,7 @@ async function reviewPRFlow() {
 
 // ── Attack flow (Pilar C: DAST) ───────────────────────────────────────────────
 async function attackFlow() {
-  clearScreen();
-  printHeader();
-
-  // OpSec Check
-  const opsec = await runOpSecCheck();
-  if (opsec.status === 'leaked') {
-    console.log(`  ${chalk.hex('#ff2d55').bold('╔══════════════════════════════════════════════════╗')}`);
-    console.log(`  ${chalk.hex('#ff2d55').bold('║')}  ${chalk.bold('¡PELIGRO! TU IP REAL ESTÁ EXPUESTA')}            ${chalk.hex('#ff2d55').bold('║')}`);
-    console.log(`  ${chalk.hex('#ff2d55').bold('╚══════════════════════════════════════════════════╝')}`);
-    console.log(`  IP Detectada: ${chalk.bold(opsec.ip)}`);
-    console.log(`  ${colors.dim('Se recomienda encarecidamente usar un Proxy o VPN.')}`);
-    console.log('');
-    const proceed = await ask(colors.warn('  ¿Deseas continuar bajo tu propio riesgo? (s/N): '));
-    if (proceed.toLowerCase() !== 's') {
-      console.log(`  ${t.fail('Operación abortada por seguridad.')}`);
-      return mainMenu();
-    }
-  }
+  if (!(await ensureStealth())) return mainMenu();
 
   await runAttackInteractive();
   await ask(colors.dim('  Pulsa Enter para volver al menú... '));

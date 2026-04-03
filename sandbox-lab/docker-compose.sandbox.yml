@@ -83,7 +83,7 @@ services:
 
   # ── Target 4: WebGoat (OWASP) ─────────────────────────────
   webgoat:
-    image: webgoat/goat-and-wolf
+    image: webgoat/webgoat-8.0
     container_name: fractia-webgoat
     hostname: webgoat
     ports:

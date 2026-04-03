@@ -2,6 +2,7 @@ import { spawn, execSync } from 'child_process';
 import os from 'os';
 import fs from 'fs';
 import net from 'net';
+import { config } from '../config.js';
 
 /**
  * TorManager: Gestiona el ciclo de vida del proceso Tor (The Onion Router)
@@ -13,6 +14,7 @@ class TorManager {
     this.socksPort = 9050; // Puerto SOCKS5 por defecto
     this.controlPort = 9051; // Puerto de control para rotar IPs
     this.isDocker = fs.existsSync('/.dockerenv');
+    this.rotationInterval = null;
   }
 
   /**
@@ -66,14 +68,18 @@ class TorManager {
       '--SocksPort', this.socksPort.toString(),
       '--ControlPort', this.controlPort.toString(),
       '--DataDirectory', '/tmp/tor_data_fractia',
-      '--CookieAuthentication', '0' // Desactivado para simplificar el script de rotación
+      '--CookieAuthentication', '0',
+      '--Log', 'notice stdout'
     ]);
 
     this.torProcess.stdout.on('data', (data) => {
       if (data.toString().includes('100% (done)')) {
         console.log('[+] Tor Bridge establecido correctamente.');
+        config.proxy = `socks5h://127.0.0.1:${this.socksPort}`;
       }
     });
+
+    this.torProcess.on('exit', () => this.stop());
 
     this.torProcess.stderr.on('data', (data) => {
       // Ignorar ruidos de advertencia de Tor si no son críticos
@@ -92,9 +98,32 @@ class TorManager {
    */
   stop() {
     if (this.torProcess) {
+      this.stopAutoRotate();
       this.torProcess.kill('SIGINT');
       this.torProcess = null;
+      config.proxy = '';
       console.log('[*] Tor Stealth Bridge detenido.');
+    }
+  }
+
+  /**
+   * Inicia la rotación automática de IP.
+   */
+  startAutoRotate(intervalMinutes = 5) {
+    this.stopAutoRotate();
+    console.log(`[*] Iniciando rotación automática cada ${intervalMinutes} minutos...`);
+    this.rotationInterval = setInterval(() => {
+      this.renewIdentity();
+    }, intervalMinutes * 60000);
+  }
+
+  /**
+   * Detiene la rotación automática.
+   */
+  stopAutoRotate() {
+    if (this.rotationInterval) {
+      clearInterval(this.rotationInterval);
+      this.rotationInterval = null;
     }
   }
 
