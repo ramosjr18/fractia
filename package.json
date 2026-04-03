@@ -10,7 +10,12 @@
   "scripts": {
     "start": "node fractia.js",
     "serve": "node fractia.js serve",
-    "dev": "node --watch fractia.js"
+    "dev": "node --watch fractia.js",
+    "sandbox:lab": "bash sandbox-lab/sandbox.sh",
+    "sandbox:lab:build": "bash sandbox-lab/sandbox.sh build",
+    "sandbox:lab:up": "bash sandbox-lab/sandbox.sh up",
+    "sandbox:lab:shell": "bash sandbox-lab/sandbox.sh shell",
+    "sandbox:lab:down": "bash sandbox-lab/sandbox.sh down"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

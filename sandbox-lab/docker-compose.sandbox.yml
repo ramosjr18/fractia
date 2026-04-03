@@ -1,0 +1,110 @@
+# ============================================================
+#  Fractia Sandbox — Orquestador multi-contenedor
+#  Targets disponibles desde el sandbox:
+#    - dvwa:80          → http://localhost:8080  (usuario/contraseña: admin/password)
+#    - juiceshop:3000   → http://localhost:3000
+#    - vulnapi:4000     → http://localhost:4000
+#    - webgoat:8888     → http://localhost:8888/WebGoat
+# ============================================================
+
+version: '3.9'
+
+services:
+
+  # ── Contenedor principal: Fractia + todas las tools ───────
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    container_name: fractia-sandbox
+    hostname: fractia-sandbox
+    volumes:
+      # Monta todo el proyecto Fractia dentro del contenedor
+      - ..:/fractia
+      # Volumen persistente para guardar resultados y reportes
+      - sandbox-results:/results
+      # Socket Docker (para análisis de contenedores si se necesita)
+      # - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - fractia-lab
+    depends_on:
+      - dvwa
+      - juiceshop
+      - vulnapi
+      - webgoat
+    stdin_open: true
+    tty: true
+    cap_add:
+      # Necesario para nmap, scapy, Slowloris
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TERM=xterm-256color
+      # Pasa las API keys de tu .env al sandbox
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  # ── Target 1: DVWA (Damn Vulnerable Web Application) ──────
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: fractia-dvwa
+    hostname: dvwa
+    ports:
+      - "8080:80"
+    networks:
+      - fractia-lab
+    environment:
+      - MYSQL_ROOT_PASSWORD=dvwa
+    restart: unless-stopped
+
+  # ── Target 2: OWASP Juice Shop ────────────────────────────
+  juiceshop:
+    image: bkimminich/juice-shop
+    container_name: fractia-juiceshop
+    hostname: juiceshop
+    ports:
+      - "3000:3000"
+    networks:
+      - fractia-lab
+    restart: unless-stopped
+
+  # ── Target 3: VulnAPI custom (diseñada para Fractia) ──────
+  vulnapi:
+    build:
+      context: ./vulnapi
+      dockerfile: Dockerfile
+    container_name: fractia-vulnapi
+    hostname: vulnapi
+    ports:
+      - "4000:4000"
+    networks:
+      - fractia-lab
+    restart: unless-stopped
+
+  # ── Target 4: WebGoat (OWASP) ─────────────────────────────
+  webgoat:
+    image: webgoat/goat-and-wolf
+    container_name: fractia-webgoat
+    hostname: webgoat
+    ports:
+      - "8888:8888"
+      - "9090:9090"
+    networks:
+      - fractia-lab
+    environment:
+      - WEBGOAT_PORT=8888
+      - WEBWOLF_PORT=9090
+    restart: unless-stopped
+
+# ── Red interna del laboratorio ───────────────────────────
+networks:
+  fractia-lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+# ── Volumen persistente para resultados ───────────────────
+volumes:
+  sandbox-results:
+    name: fractia-sandbox-results

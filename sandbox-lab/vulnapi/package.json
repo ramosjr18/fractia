@@ -1,0 +1,14 @@
+{
+  "name": "vulnapi",
+  "version": "1.0.0",
+  "description": "API intencionalmente vulnerable para Fractia Sandbox",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

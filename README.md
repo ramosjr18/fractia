@@ -9,6 +9,7 @@ Fractia es una plataforma de seguridad integral que combina tres engines de aná
 | Engine | Descripción | Módulos | Tecnología |
 |--------|-------------|---------|------------|
 | **Code Engine (SAST)** | Análisis estático + IA (Node.js & Python) | 13 | JavaScript (ES Modules) |
+| **Web Analyzer (Recon)** | Huella digital de stack web y reconocimiento | - | Node.js (Passive) |
 | **Attack Engine (DAST)** | Pruebas dinámicas de denegación de servicio | 2 | Node.js (CLI-only) |
 | **Infra Engine (IronBase)** | Hardening y auditoría de servidores Linux | 9 | Bash |
 
@@ -20,6 +21,7 @@ Fractia es una plataforma de seguridad integral que combina tres engines de aná
 - **24 módulos de seguridad** en total: 13 de código, 9 de infraestructura y 2 de ataque dinámico.
 - **Dashboard Dual**: Code Audit e Infra Audit con interfaz diferenciada y visualización de riesgos en tiempo real.
 - **Análisis Híbrido**: Análisis estático rápido enriquecido con **IA profunda** (Claude 3.5 Sonnet o GPT-4o) para construir vectores de ataque.
+- **Web Analyzer**: Motor de reconocimiento pasivo para identificar CMS (WordPress, Ghost), Frameworks (React, Next.js), UI (Tailwind) y versiones específicas, además de analizar `robots.txt` y `sitemaps`.
 - **IronBase Engine**: Ejecuta módulos Bash de bajo nivel para auditar SSH, Firewall, Filesystem, y vulnerabilidades de kernel.
 - **DAST Integrado**: CLI para ejecutar ataques de Slowloris y Credential Stuffing contra endpoints activos.
 - **Tolerancia a fallos**: Ejecución modular aislada; si un auditor falla, el reporte general continúa.
@@ -77,6 +79,13 @@ npm start
 node fractia.js attack --target http://api.local --profile slowloris --duration 60
 ```
 
+### Web Analyzer (Recon)
+```bash
+# Iniciar análisis interactivo de un sitio web
+node fractia.js
+# Seleccionar opción [7] Web Analyzer
+```
+
 ---
 
 ## Módulos del Code Engine (SAST)
@@ -109,13 +118,15 @@ fractia/
 ├── auditors/                  # 13 auditores modulares (SAST)
 │   ├── auth.js                # Soporta Node.js y Python
 │   ├── sql.js                 # Soporta Prisma, SQLAlchemy, etc.
-│   ├── nextjs.js              # Auditoría específica Next.js
 │   └── ...
+├── cli/
+│   └── webAnalyzerFlow.js     # Interfaz interactiva de reconocimiento
 ├── utils/
 │   ├── fileScanner.js         # Motor de escaneo y grep
 │   └── projectType.js         # Detección automática Node/Python
 └── engines/
     ├── codeAudit.js           # Lógica central del Code Engine
+    ├── webAnalyzer.js         # Motor de detección de tecnología (Recon)
     └── ironbase/              # Engine de infraestructura (Bash)
 ```
 

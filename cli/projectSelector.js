@@ -103,11 +103,19 @@ export async function selectProject(envProjectRoot) {
   console.log('');
   console.log(t.option(`[${optNum}]`, `Escribir ruta manualmente`));
   const manualNum = optNum;
+  optNum++;
+  
+  console.log(t.option(`[v]`, `Volver`));
 
   console.log('');
-  const ans = await ask(colors.accent2('  ▸ ') + colors.text(`Proyecto [1-${manualNum}]: `));
-  const choice = parseInt(ans.trim(), 10);
+  const ans = await ask(colors.accent2('  ▸ ') + colors.text(`Proyecto [1-${manualNum} / v]: `));
+  
+  if (ans.toLowerCase() === 'v') {
+    rl.close();
+    return null;
+  }
 
+  const choice = parseInt(ans.trim(), 10);
   let selectedPath;
 
   if (choice === manualNum || isNaN(choice)) {
@@ -118,6 +126,10 @@ export async function selectProject(envProjectRoot) {
       selectedPath = path.resolve(pathAns);
     } else {
       const manualPath = await ask(colors.accent2('  ▸ ') + colors.text('Ruta del proyecto: '));
+      if (!manualPath) {
+        rl.close();
+        return null;
+      }
       selectedPath = path.resolve(manualPath.trim());
     }
   } else {
@@ -137,7 +149,7 @@ export async function selectProject(envProjectRoot) {
     console.log('');
     console.log(t.fail(`La ruta no existe: ${selectedPath}`));
     console.log(t.label('  Verifica la ruta e intenta de nuevo.\n'));
-    process.exit(1);
+    return null;
   }
 
   // Save to history

@@ -13,8 +13,9 @@
  */
 import path from 'path';
 import readline from 'readline';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'fs';
 import chalk from 'chalk';
 
 import { config } from './config.js';
@@ -111,7 +112,11 @@ async function ensureAIProvider() {
 
 // ── Header bar (compact, shown above every screen) ───────────────────────────
 function printHeader() {
-  const proj = chalk.hex('#a78bfa').bold(path.basename(config.projectRoot));
+  const projName = config.projectRoot ? path.basename(config.projectRoot) : 'ninguno';
+  const proj = config.projectRoot 
+    ? chalk.hex('#a78bfa').bold(projName)
+    : chalk.hex('#ff2d55').italic('ninguno');
+    
   const ai = config.aiProvider && config.aiProvider !== 'none'
     ? chalk.hex('#00f5a0')(config.aiProvider)
     : colors.dim('sin IA');
@@ -129,6 +134,32 @@ function printHeader() {
   console.log(`  ${divider(52)}`);
 }
 
+// ── Project Check ────────────────────────────────────────────────────────────
+async function ensureProjectSelected() {
+  if (config.projectRoot && existsSync(config.projectRoot)) return true;
+  
+  console.log('');
+  console.log(`  ${chalk.hex('#ff9f1c')('!')} ${colors.text('Esta acción requiere seleccionar un proyecto.')}`);
+  
+  const envRoot = process.env.PROJECT_ROOT || '';
+  const newPath = await selectProject(envRoot);
+  
+  if (newPath && existsSync(newPath)) {
+    config.projectRoot = newPath;
+    // Save to .env
+    const envPath = path.join(__dirname, '.env');
+    let content = '';
+    try { content = readFileSync(envPath, 'utf8'); } catch { }
+    const lines = content.split('\n');
+    const idx = lines.findIndex(l => l.startsWith('PROJECT_ROOT='));
+    if (idx >= 0) lines[idx] = `PROJECT_ROOT=${newPath}`;
+    else lines.push(`PROJECT_ROOT=${newPath}`);
+    writeFileSync(envPath, lines.join('\n'), 'utf8');
+    return true;
+  }
+  return false;
+}
+
 // ── Main menu ────────────────────────────────────────────────────────────────
 async function mainMenu() {
   clearScreen();
@@ -144,6 +175,7 @@ async function mainMenu() {
   console.log(t.option('[5]', `Auto-Fix      ${chalk.hex('#c084fc').bold('AI')}         ${colors.dim('corrige critical/high · crea branch · abre PR')}`));
   console.log(t.option('[6]', `Review PR     ${chalk.hex('#38bdf8').bold('Shift-Left')} ${colors.dim('audita un PR de GitHub antes del merge')}`));
   console.log(t.option('[7]', `Web Analyzer  ${chalk.hex('#00b4d8').bold('Recon')}      ${colors.dim('identifica stack: CMS, frameworks, librerías…')}`));
+  console.log(t.option('[8]', `Lab Sandbox   ${chalk.hex('#f472b6').bold('Docker')}     ${colors.dim('entorno de pruebas con targets vulnerables')}`));
   console.log(t.option('[c]', `Configuración`));
   console.log(t.option('[s]', `Iniciar Web UI      ${colors.dim(`http://localhost:${config.port}`)}`));
   console.log(t.option('[p]', `Cambiar proyecto    ${colors.dim(config.projectRoot)}`));
@@ -160,6 +192,7 @@ async function mainMenu() {
     case '5': return autoFixFlow();
     case '6': return reviewPRFlow();
     case '7': await runWebAnalyzerFlow(); return mainMenu();
+    case '8': await launchSandbox(); return mainMenu();
     case 'c': return configMenu();
     case 's': return serveFlow();
     case 'p': return changeProjectFlow();
@@ -173,6 +206,8 @@ async function mainMenu() {
 
 // ── Code Audit flow ──────────────────────────────────────────────────────────
 async function codeAuditFlow() {
+  if (!(await ensureProjectSelected())) return mainMenu();
+
   clearScreen();
   printHeader();
 
@@ -251,6 +286,8 @@ async function codeAuditFlow() {
 
 // ── Infra Audit flow ─────────────────────────────────────────────────────────
 async function infraAuditFlow() {
+  if (!(await ensureProjectSelected())) return mainMenu();
+
   if (!isIronbaseAvailable()) {
     console.log('');
     console.log(t.fail('IronBase Engine no disponible. Verifica engines/ironbase/'));
@@ -292,6 +329,36 @@ async function infraAuditFlow() {
 
   await ask(colors.dim('  Pulsa Enter para volver al menú... '));
   return mainMenu();
+}
+
+// ── Sandbox Lab flow ──────────────────────────────────────────────────────────
+async function launchSandbox() {
+  const sandboxScript = path.join(__dirname, 'sandbox-lab', 'sandbox.sh');
+
+  if (!existsSync(sandboxScript)) {
+    console.log('');
+    console.log(chalk.hex('#ff2d55').bold('✗ error') + colors.text(` No se encontró el script en: ${sandboxScript}`));
+    console.log('');
+    await ask(colors.dim('  Presiona Enter para volver... '));
+    return;
+  }
+
+  // Asegura que el script tenga permisos de ejecución
+  const chmod = spawn('chmod', ['+x', sandboxScript]);
+  await new Promise(resolve => chmod.on('close', resolve));
+
+  clearScreen();
+  // Lanza sandbox.sh pasando el control total al proceso hijo
+  const sandbox = spawn('bash', [sandboxScript], {
+    stdio: 'inherit',
+    cwd: path.join(__dirname, 'sandbox-lab'),
+  });
+
+  return new Promise((resolve) => {
+    sandbox.on('close', (code) => {
+      resolve(code);
+    });
+  });
 }
 
 // ── Config menu ──────────────────────────────────────────────────────────────
@@ -372,13 +439,17 @@ async function changeProjectFlow() {
   }
 
   const newPath = await selectProject(config.projectRoot);
-  config.projectRoot = newPath;
-  saveToEnv('PROJECT_ROOT', newPath);
+  if (newPath) {
+    config.projectRoot = newPath;
+    saveToEnv('PROJECT_ROOT', newPath);
+  }
   return mainMenu();
 }
 
 // ── Mobile Audit flow (Pilar D: Flutter/Dart) ────────────────────────────────
 async function mobileAuditFlow() {
+  if (!(await ensureProjectSelected())) return mainMenu();
+
   clearScreen();
   printHeader();
 
@@ -618,6 +689,8 @@ async function ensureGitHubToken() {
 
 // ── Auto-Fix flow (Pilar E) ───────────────────────────────────────────────────
 async function autoFixFlow() {
+  if (!(await ensureProjectSelected())) return mainMenu();
+
   clearScreen();
   printHeader();
 
@@ -962,17 +1035,13 @@ async function main() {
     config.projectRoot = resolved;
     addToHistory(resolved);
   } else {
-    const envRoot = process.env.PROJECT_ROOT || '';
-    config.projectRoot = await selectProject(envRoot);
-    const { writeFileSync, readFileSync } = await import('fs');
-    const envPath = path.join(__dirname, '.env');
-    let content = '';
-    try { content = readFileSync(envPath, 'utf8'); } catch { }
-    const lines = content.split('\n');
-    const idx = lines.findIndex(l => l.startsWith('PROJECT_ROOT='));
-    if (idx >= 0) lines[idx] = `PROJECT_ROOT=${config.projectRoot}`;
-    else lines.push(`PROJECT_ROOT=${config.projectRoot}`);
-    writeFileSync(envPath, lines.join('\n'), 'utf8');
+    // Priority: .env PROJECT_ROOT > process.env.PROJECT_ROOT
+    const envRoot = config.projectRoot || process.env.PROJECT_ROOT || '';
+    if (envRoot && existsSync(envRoot)) {
+      config.projectRoot = envRoot;
+    } else {
+      config.projectRoot = ''; // Entry point is now the main menu
+    }
   }
 
   // Restore AI provider from config store if available

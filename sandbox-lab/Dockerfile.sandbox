@@ -1,0 +1,99 @@
+# ============================================================
+#  Fractia Sandbox — Imagen de herramientas de seguridad
+#  Base: Ubuntu 22.04 LTS
+# ============================================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV TERM=xterm-256color
+
+# ── 1. Sistema base + herramientas de red ──────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Utilidades base
+    curl wget git vim nano jq tmux unzip \
+    build-essential ca-certificates gnupg lsb-release \
+    # Red y reconocimiento
+    nmap netcat-openbsd whois dnsutils \
+    traceroute iputils-ping net-tools iproute2 \
+    # Análisis web
+    nikto whatweb dirb \
+    # Ataque / auth
+    hydra john \
+    # Scripting & parseo
+    python3 python3-pip python3-venv \
+    # SSL / TLS inspection
+    openssl libssl-dev \
+    # Útiles de sistema (para IronBase)
+    ufw auditd crontabs-old sysstat \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 2. Node.js 18 (vía NodeSource) ────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g npm@latest
+
+# ── 3. Herramientas Go (gobuster, ffuf) ────────────────────
+RUN curl -LO https://go.dev/dl/go1.21.5.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz \
+    && rm go1.21.5.linux-amd64.tar.gz
+ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
+
+RUN go install github.com/OJ/gobuster/v3@latest 2>/dev/null || \
+    (apt-get install -y gobuster 2>/dev/null || true)
+
+RUN go install github.com/ffuf/ffuf/v2@latest 2>/dev/null || true
+
+# ── 4. SQLMap (última versión desde GitHub) ───────────────
+RUN git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git /opt/sqlmap \
+    && ln -s /opt/sqlmap/sqlmap.py /usr/local/bin/sqlmap
+
+# ── 5. Python libs de seguridad ───────────────────────────
+RUN pip3 install --no-cache-dir \
+    requests httpx scapy \
+    colorama rich \
+    jwt cryptography \
+    paramiko \
+    dnspython \
+    python-nmap
+
+# ── 6. Wordlists (subconjunto de SecLists) ────────────────
+RUN mkdir -p /wordlists && \
+    # Top 10k passwords
+    curl -sSL -o /wordlists/passwords-10k.txt \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt" || \
+    echo "admin\npassword\n123456\nroot\ntest" > /wordlists/passwords-10k.txt && \
+    # Directorios web comunes
+    curl -sSL -o /wordlists/web-dirs.txt \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt" || \
+    echo "admin\napi\nlogin\nbackup\n.git" > /wordlists/web-dirs.txt && \
+    # Usuarios comunes
+    curl -sSL -o /wordlists/usernames.txt \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Usernames/top-usernames-shortlist.txt" || \
+    echo "admin\nroot\ntest\nuser\nguest" > /wordlists/usernames.txt && \
+    # API endpoints comunes
+    curl -sSL -o /wordlists/api-endpoints.txt \
+    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/api/api-endpoints.txt" || \
+    echo "/api/v1/users\n/api/v1/admin\n/health\n/debug" > /wordlists/api-endpoints.txt
+
+# ── 7. Scripts de utilidad ────────────────────────────────
+COPY sandbox-tools/recon.sh /usr/local/bin/recon
+COPY sandbox-tools/quickscan.sh /usr/local/bin/quickscan
+RUN chmod +x /usr/local/bin/recon /usr/local/bin/quickscan
+
+# ── 8. Workspace ─────────────────────────────────────────
+WORKDIR /fractia
+
+# El proyecto Fractia se monta como volumen en runtime
+# Ver docker-compose.sandbox.yml
+
+RUN echo 'export PS1="\[\033[01;31m\][fractia-sandbox]\[\033[00m\] \[\033[01;34m\]\w\[\033[00m\] \$ "' \
+    >> /root/.bashrc && \
+    echo 'echo ""' >> /root/.bashrc && \
+    echo 'echo "  ⚡ Fractia Sandbox — $(date +%Y-%m-%d)"' >> /root/.bashrc && \
+    echo 'echo "  Targets: dvwa:80 | juiceshop:3000 | vulnapi:4000"' >> /root/.bashrc && \
+    echo 'echo "  Tools: nmap, nikto, hydra, sqlmap, gobuster, ffuf, whatweb"' >> /root/.bashrc && \
+    echo 'echo "  Wordlists: /wordlists/"' >> /root/.bashrc && \
+    echo 'echo ""' >> /root/.bashrc
+
+CMD ["/bin/bash"]
