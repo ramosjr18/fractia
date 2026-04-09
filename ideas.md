@@ -2,6 +2,39 @@
 
 ---
 
+## Agentic Security Engine (LLM Protection) [P0 — NUEVO]
+
+### El Problema
+Los sistemas "agenticos" (IA que usa herramientas, ejecuta comandos o accede a datos) introducen vulnerabilidades de **Agencia Excesiva** y **Prompt Injection**. Fractia debe ser capaz de auditar no solo el codigo tradicional, sino la arquitectura de confianza entre el LLM y el sistema.
+
+### Los 5 Pilares del Agentic Audit
+
+#### 1. Auditoría de Herramientas (Tool Integrity)
+- **Que detecta**: Herramientas (plugins/functions) con permisos demasiado amplios.
+- **Ejemplo**: Un `file_writer` que permite escribir fuera de un directorio temporal, o un `exec_command` que no tiene una whitelist de comandos permitidos.
+- **Check**: Validar que los JSON Schemas de las herramientas tengan restricciones (enum, pattern, min/max).
+
+#### 2. Prompt Injection Analysis
+- **Que detecta**: Concatenacion insegura de `system_prompt` y `user_input`.
+- **Vulnerabilidad**: Falta de delimitadores claros (como `###` o XML tags) que permitan al usuario "escapar" de sus instrucciones.
+- **Check**: Buscar patrones de construccion de strings para mensajes de chat.
+
+#### 3. Output Sanitization (XSS/RCE via LLM)
+- **Que detecta**: Confianza ciega en la respuesta del LLM.
+- **Vulnerabilidad**: El LLM genera codigo Javascript malicioso que la app renderiza directamente con `innerHTML` o ejecuta con `eval()`.
+- **Check**: Traceo de datos desde `openai.chat.completions` hacia sinks peligrosos.
+
+#### 4. SSRF via Agent
+- **Que detecta**: Herramientas de navegacion web que permiten acceder a la red interna (Intranet).
+- **Check**: Validacion de URLs en herramientas tipo `fetch_url` para bloquear `localhost`, `127.0.0.1` y metadatos de cloud (169.254.169.254).
+
+#### 5. Data & Memory Leakage (RAG Security)
+- **Que detecta**: Fugas de datos entre usuarios en sistemas con memoria o RAG.
+- **Vulnerabilidad**: El Agente recupera "recuerdos" o documentos del Usuario A para responder al Usuario B.
+- **Check**: Validacion de `tenantId` o `userId` en las queries de bases de datos vectoriales.
+
+---
+
 ## Flutter/Dart Security Engine
 
 ### El problema

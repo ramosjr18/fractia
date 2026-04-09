@@ -6,13 +6,14 @@ import { enrichWithClaude } from '../utils/claudeClient.js';
 import { enrichWithOpenAI } from '../utils/openaiClient.js';
 
 export const ALL_MODULES = [
-  'auth', 'api', 'ddos', 'sql', 'xss', 'secrets',
+  'auth', 'agentic', 'api', 'ddos', 'sql', 'xss', 'secrets',
   'headers', 'deps', 'infra', 'bots', 'crypto', 'logs', 'nextjs',
   'gitHistory',
 ];
 
 const AUDITORS = {
   auth:       () => import('../auditors/auth.js'),
+  agentic:    () => import('../auditors/agentic.js'),
   api:        () => import('../auditors/api.js'),
   ddos:       () => import('../auditors/ddos.js'),
   sql:        () => import('../auditors/sql.js'),
