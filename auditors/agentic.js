@@ -15,70 +15,54 @@ async function auditNode(structure) {
   const jsExtensions = ['.js', '.ts', '.jsx', '.tsx'];
 
   // --- 1. Tool Integrity (Excessive Agency) ---
-  // Look for OpenAI tools/functions or LangChain tool definitions
   const toolMatches = await grepFiles(src, [
     /tools\s*:\s*\[/i,
     /functions\s*:\s*\[/i,
     /new\s+DynamicTool/i,
     /new\s+StructuredTool/i,
-    /@tool/i
-  ], { extensions: jsExtensions });
+    /@tool/i,
+    /registry\.py/i // Pattern from agentic-chat
+  ], { extensions: jsExtensions.concat(['.py']) });
 
-  if (toolMatches.length > 0) {
-    const uniqueFiles = [...new Set(toolMatches.map(m => m.filePath))];
-    for (const file of uniqueFiles) {
-      const content = await readFile(file);
-      if (content && !/enum|pattern|minimum|maximum/i.test(content)) {
-        findings.push({
-          type: 'vulnerability',
-          title: `LLM Tools without strict parameter validation in ${path.basename(file)}`,
-          description: 'Se detectaron definiciones de herramientas para LLM que no parecen usar restricciones de esquema (enum, pattern, min/max). Un atacante podría pasar valores arbitrarios (ej. rutas de archivos, comandos) si el modelo es manipulado.',
-          code_example: '{\n  name: "read_file",\n  parameters: {\n    type: "object",\n    properties: { path: { type: "string" } } // Falta whitelist/pattern\n  }\n}',
-          cve: null,
-        });
-        _codeSnippets[path.relative(src, file)] = truncate(content, 1000);
-        break; 
-      }
-    }
-  }
-
-  // --- 2. Prompt Injection (Insecure Concatenation) ---
+  // --- 2. Prompt Injection (Insecure Concatenation & Wrapping) ---
   const promptMatches = await grepFiles(src, [
     /role\s*:\s*['"]system['"].*\$\{/i,
     /prompt\s*:\s*[`'].*\$\{.*[`']/i,
-    /template\s*:\s*[`'].*\$\{.*[`']/i
-  ], { extensions: jsExtensions });
+    /template\s*:\s*[`'].*\$\{.*[`']/i,
+    /f"##.*json\.dumps/i, // Pattern from ExampleApp/agentic-chat
+    /prompt_parts\.append/i,
+    /"\s*\.join\(.*prompt_parts/i
+  ], { extensions: jsExtensions.concat(['.py']) });
 
   if (promptMatches.length > 0) {
     findings.push({
       type: 'warning',
-      title: 'Potential insecure prompt construction',
-      description: 'Se detectó la construcción de prompts concatenando variables directamente. Sin delimitadores claros (ej. XML tags o markers tipo ###), el input del usuario puede desbordar las instrucciones del sistema (Prompt Injection).',
-      code_example: 'const prompt = `System: do X. User input: ${userInput}`; // Inseguro\nconst prompt = `System: do X.\nUser: <input>${userInput}</input>`; // Mejor`,
+      title: 'Insecure prompt construction (Cascading/Concatenation)',
+      description: 'Se detectó la construcción de prompts mediante concatenación de strings o wrapping de JSON sin delimitadores de seguridad. Esto es especialmente peligroso en sistemas multi-agente donde el output de un agente se convierte en el input del siguiente (Cascading Injection).',
+      code_example: 'brief_message = f"## Brief\\n\\n```json\\n{json.dumps(brief)}\\n```" // Inseguro si "brief" tiene input de usuario',
       cve: null,
     });
   }
 
-  // --- 3. Output Sanitization (LLM -> Sink) ---
-  const outputMatches = await grepFiles(src, [
+  // --- 3. Output Sanitization & Dangerous Sinks (SQL/API) ---
+  const sinkMatches = await grepFiles(src, [
     /dangerouslySetInnerHTML/i,
     /eval\s*\(/i,
     /exec\s*\(/i,
-    /innerHTML/i
-  ], { extensions: jsExtensions });
+    /innerHTML/i,
+    /UPDATE\s+.*SET\s+.*\{/i, // Dynamic SQL pattern from ExampleApp
+    /text\(f"UPDATE/i,      // SQLAlchemy dynamic text
+    /nanobana|image_client/i // External API sinks
+  ], { extensions: jsExtensions.concat(['.py']) });
 
-  // Cross-reference with LLM response variables (crude check)
-  if (outputMatches.length > 0) {
-    const llmVarMatches = await grepFiles(src, [/choices\[0\]\.message/, /response\.content/, /aiResponse/], { extensions: jsExtensions });
-    if (llmVarMatches.length > 0) {
-      findings.push({
-        type: 'critical',
-        title: 'LLM output potentially passed to dangerous sink',
-        description: 'Se detectó el uso de sinks peligrosos (eval, innerHTML) en el mismo proyecto que usa LLMs. Si la respuesta del modelo no se sanitiza, un atacante puede ejecutar XSS o RCE inyectando código en la respuesta de la IA.',
-        code_example: '<div dangerouslySetInnerHTML={{ __html: aiResponse }} />',
-        cve: null,
-      });
-    }
+  if (sinkMatches.length > 0) {
+    findings.push({
+      type: 'critical',
+      title: 'LLM-influenced data reaches dangerous sink (SQL/External API)',
+      description: 'Se detectó que datos que podrían provenir de un LLM o de la configuración de un agente se usan en sinks peligrosos como queries SQL dinámicas o llamadas a APIs externas de generación de assets. Esto permite ataques de Indirect Prompt Injection con impacto en persistencia o costes.',
+      code_example: 'text(f"UPDATE projects SET {step.output_field} = :val") // Altamente peligroso',
+      cve: null,
+    });
   }
 
   // --- 4. SSRF via Agent tools ---
