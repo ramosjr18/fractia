@@ -1006,35 +1006,36 @@ async function main() {
   }
 
   if (cliArg === 'attack') {
+    // ... (existing attack logic)
+  }
+
+  if (cliArg === 'audit-list') {
     const argv = process.argv.slice(3);
-    const getFlag = (flag) => {
-      const i = argv.indexOf(flag);
-      return i !== -1 ? argv[i + 1] : undefined;
-    };
-    const target = getFlag('--target');
-    const profile = getFlag('--profile');
-    if (!target || !profile) {
-      console.log('');
-      console.log(t.fail('Uso: fractia attack --target URL --profile PROFILE'));
-      console.log(`  ${colors.dim('Perfiles: slowloris, bots-stuffing')}`);
-      console.log('');
+    const getFlag = (flag) => { const i = argv.indexOf(flag); return i !== -1 ? argv[i + 1] : undefined; };
+    const filePath = getFlag('--file');
+    const profile = getFlag('--profile') || 'recon';
+
+    if (!filePath || !existsSync(path.resolve(filePath))) {
+      console.log(`\n  ${t.fail('Uso: fractia audit-list --file LISTA.txt [--profile PROFILE]')}\n`);
       process.exit(1);
     }
-    const optsRaw = {
-      loginPath: getFlag('--login-path'),
-      bodyTemplate: getFlag('--body'),
-      mode: getFlag('--mode'),
-      formIndex: getFlag('--form-index') ? parseInt(getFlag('--form-index'), 10) : undefined,
-      requests: getFlag('--requests') ? parseInt(getFlag('--requests'), 10) : undefined,
-      duration: getFlag('--duration') ? parseInt(getFlag('--duration'), 10) : undefined,
-      connections: getFlag('--connections') ? parseInt(getFlag('--connections'), 10) : undefined,
-      formAction: getFlag('--form-action'),
-      fields: getFlag('--fields'),
-      method: getFlag('--method'),
-    };
-    // Strip undefined values so engine defaults (meta.defaultOpts) are not overridden
-    const opts = Object.fromEntries(Object.entries(optsRaw).filter(([, v]) => v !== undefined));
-    await runAttackCLI({ target, profile, opts });
+
+    const urls = readFileSync(path.resolve(filePath), 'utf8')
+      .split('\n')
+      .map(u => u.trim())
+      .filter(u => u.startsWith('http'));
+
+    console.log(`\n  ${chalk.hex('#00b4d8')('◌')} Procesando lista de ${urls.length} URLs…\n`);
+
+    for (const target of urls) {
+      console.log(`  ${chalk.bold('Target:')} ${chalk.cyan(target)}`);
+      try {
+        await runAttackCLI({ target, profile, opts: {} });
+        console.log(`  ${divider(52)}\n`);
+      } catch (e) {
+        console.log(`  ${t.fail('Error auditing ' + target + ': ' + e.message)}\n`);
+      }
+    }
     process.exit(0);
   }
 

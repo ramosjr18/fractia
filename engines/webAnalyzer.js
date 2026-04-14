@@ -83,21 +83,35 @@ const FINGERPRINTS = [
 
 // ── Main Runner ──────────────────────────────────────────────────────────────
 export async function run({ target, opts = {}, hooks = {} }) {
-  const timeout = opts.timeout || 10000;
+  // Debug config and options
+  // console.log(`[DEBUG] config.proxy: ${config.proxy}`);
+  // Use a longer timeout if a proxy is active, as Tor can be slow
+  const defaultTimeout = config.proxy ? 60000 : 15000;
+  const timeout = opts.timeout || defaultTimeout;
+  
   const urlObj = new URL(target);
   const baseUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.port ? ':' + urlObj.port : ''}`;
 
   hooks.onPhase?.('fetching', `Extrayendo contenido de ${target}...`);
 
   // Fetch main page, robots.txt and sitemap.xml in parallel
-  const [pageRes, robotsRes, sitemapRes] = await Promise.all([
-    fetchFull(target, timeout),
-    fetchFull(`${baseUrl}/robots.txt`, timeout),
-    fetchFull(`${baseUrl}/sitemap.xml`, timeout),
-  ]);
+  let pageRes, robotsRes, sitemapRes;
+  try {
+    [pageRes, robotsRes, sitemapRes] = await Promise.all([
+      httpClient.get(target, { timeout }),
+      httpClient.get(`${baseUrl}/robots.txt`, { timeout }).catch(() => ({ status: 0, body: '' })),
+      httpClient.get(`${baseUrl}/sitemap.xml`, { timeout }).catch(() => ({ status: 0, body: '' })),
+    ]);
+  } catch (err) {
+    throw new Error(`Error de conexión: ${err.message}`);
+  }
 
-  if (pageRes.status === 0) {
-    throw new Error('No se pudo conectar con el objetivo principal.');
+  if (!pageRes || pageRes.status === 0) {
+    throw new Error('No se pudo conectar con el objetivo principal (status 0).');
+  }
+
+  if (pageRes.status >= 400 && pageRes.status !== 403) {
+    throw new Error(`El servidor respondió con un error HTTP ${pageRes.status}`);
   }
 
   hooks.onPhase?.('analyzing', 'Analizando tecnologías y activos...');

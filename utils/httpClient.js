@@ -27,7 +27,7 @@ export async function request(url, options = {}) {
     port: parsedUrl.port || (isHttps ? 443 : 80),
     path: parsedUrl.pathname + parsedUrl.search,
     headers: { ...defaultHeaders, ...(options.headers || {}) },
-    timeout: options.timeout || 15000,
+    timeout: options.timeout || (config.proxy ? 60000 : 15000),
     rejectUnauthorized: false, // Útil para entornos de prueba / Sandbox
   };
 

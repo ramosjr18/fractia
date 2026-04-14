@@ -65,8 +65,8 @@ class TorManager {
 
     // Iniciamos tor con ControlPort habilitado para rotar identidades
     this.torProcess = spawn('tor', [
-      '--SocksPort', this.socksPort.toString(),
-      '--ControlPort', this.controlPort.toString(),
+      '--SocksPort', `0.0.0.0:${this.socksPort}`,
+      '--ControlPort', `0.0.0.0:${this.controlPort}`,
       '--DataDirectory', '/tmp/tor_data_fractia',
       '--CookieAuthentication', '0',
       '--Log', 'notice stdout'

@@ -27,13 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # SSL / TLS inspection
     openssl libssl-dev \
     # Útiles de sistema (para IronBase)
-    ufw auditd crontabs-old sysstat \
+    ufw auditd cron sysstat \
     && rm -rf /var/lib/apt/lists/*
 
-# ── 2. Node.js 18 (vía NodeSource) ────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g npm@latest
+# ── 2. Node.js 22 (vía NodeSource) ────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs
 
 # ── 3. Herramientas Go (gobuster, ffuf) ────────────────────
 RUN curl -LO https://go.dev/dl/go1.21.5.linux-amd64.tar.gz \
@@ -81,7 +80,8 @@ RUN mkdir -p /wordlists && \
 # ── 7. Scripts de utilidad ────────────────────────────────
 COPY sandbox-tools/recon.sh /usr/local/bin/recon
 COPY sandbox-tools/quickscan.sh /usr/local/bin/quickscan
-RUN chmod +x /usr/local/bin/recon /usr/local/bin/quickscan
+COPY sandbox-tools/deep-scan.sh /usr/local/bin/deep-scan
+RUN chmod +x /usr/local/bin/recon /usr/local/bin/quickscan /usr/local/bin/deep-scan
 
 # ── 8. Workspace ─────────────────────────────────────────
 WORKDIR /fractia
