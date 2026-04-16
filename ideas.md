@@ -313,6 +313,51 @@ fractia tor [--start|--stop|--rotate|--status]
 
 ---
 
+## Fractia como Servicio de Consultoría de Seguridad
+
+### Estado actual — útil pero no listo para clientes
+
+**Qué hace bien hoy:**
+- Cubre el stack completo en una sola herramienta (SAST + DAST + Infra + Recon + AI)
+- 15 módulos SAST con patrones reales, no reglas de juguete
+- El modo AI `full` construye cadenas de ataque reales entre fases, no solo listas de findings
+- El comando `preproduction` (en construcción) es genuinamente diferenciador — muy pocas herramientas combinan sandbox + DAST calibrado de producción en un solo run
+
+**Qué lo hace débil para entregar a clientes hoy:**
+- Sin generación de PDF — entregar un JSON o HTML crudo no es profesional para un engagement pagado
+- Requiere setup manual en cada máquina — no hay SaaS ni ejecución en cloud
+- El Attack Engine (DAST) es CLI puro — correr Slowloris/credential stuffing sin documentación de autorización explícita es exposición legal
+- No hay flujo de autorización — no hay forma de registrar "cliente X autorizó test Y en fecha Z", que es obligatorio en cada engagement
+- El Attack Engine es demasiado raw — Slowloris y credential stuffing sin controles de scope son una responsabilidad legal
+
+---
+
+### Lo que se necesita para vender el servicio
+
+**Mínimo viable para consultoría:**
+1. **Reporte PDF** — ya está en el Roadmap, es el bloqueador principal
+2. **Plantilla de engagement letter / scope of work** — firmar antes de tocar cualquier sistema de cliente; define qué se prueba, en qué fechas, con qué herramientas
+3. **Ejecutar tú mismo, entregar el reporte** — no dar acceso a la herramienta, dar el informe. Fractia como toolchain interno, el cliente recibe el PDF
+
+**Para producto/SaaS (más adelante):**
+- Ejecución en cloud (tú corres, ellos ven resultados en dashboard)
+- Aislamiento de tenants
+- Es un lift considerablemente mayor
+
+---
+
+### El play realista a corto plazo
+
+Usar Fractia internamente como toolchain de auditoría y entregar **reportes profesionales en PDF** a clientes. Posicionarlo como "tooling propietario" — no necesitas exponer el código para nada. Corres `fractia preproduction` contra su staging + producción, limpias el reporte HTML, exportas a PDF, entregas.
+
+Eso es un producto de consultoría legítimo. El comando `preproduction` una vez construido es el centerpiece — la mayoría de agencias auditan código O infra O producción por separado. Hacer los tres en un solo run automatizado con análisis AI cross-phase es un diferenciador real.
+
+**Los dos bloqueadores a resolver primero:**
+1. **Reporte PDF** (GDP-34 Roadmap ya lo tiene)
+2. **Plantilla de scope of work firmada** antes de tocar cualquier sistema de cliente
+
+---
+
 ## Otras ideas futuras
 
 ### Auditor de React/Vue generico (frontend.js)
