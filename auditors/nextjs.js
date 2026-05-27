@@ -65,18 +65,19 @@ export async function audit(depth = 'standard') {
 
   const sensitivePublicVars = [];
   const SENSITIVE_KEYWORDS = ['secret', 'key', 'token', 'password', 'private', 'credential', 'api_key', 'apikey'];
+  const IGNORE_KEYWORDS = ['cookie_name', 'token_cookie', 'stripe_publishable', 'posthog_key', 'ga_id'];
 
   for (const line of envFile.split('\n')) {
     if (!line.startsWith('NEXT_PUBLIC_')) continue;
     const varName = line.split('=')[0].toLowerCase();
-    if (SENSITIVE_KEYWORDS.some(kw => varName.includes(kw))) {
+    if (SENSITIVE_KEYWORDS.some(kw => varName.includes(kw)) && !IGNORE_KEYWORDS.some(kw => varName.includes(kw))) {
       sensitivePublicVars.push(line.split('=')[0]);
     }
   }
 
   // Also check source code for process.env.NEXT_PUBLIC_ with sensitive names
   const publicEnvInCode = await grepFiles(root, [
-    /process\.env\.NEXT_PUBLIC_.*(?:SECRET|KEY|TOKEN|PASSWORD|PRIVATE|CREDENTIAL)/i,
+    /process\.env\.NEXT_PUBLIC_(?!TOKEN_COOKIE|COOKIE_NAME|STRIPE_PUBLISHABLE|POSTHOG_KEY).*(?:SECRET|KEY|TOKEN|PASSWORD|PRIVATE|CREDENTIAL)/i,
   ], { extensions: ALL_EXTENSIONS });
 
   if (sensitivePublicVars.length > 0 || publicEnvInCode.length > 0) {
@@ -220,12 +221,17 @@ export async function audit(depth = 'standard') {
   // ────────────────────────────────────────────────────────────
   const dangerousHTML = await grepFiles(root, [
     /dangerouslySetInnerHTML/,
-  ], { extensions: ALL_EXTENSIONS });
+  ], { extensions: ALL_EXTENSIONS, contextLines: 4 });
 
   if (dangerousHTML.length > 0) {
-    // Check if any use user-controlled input
+    // Check if any use user-controlled input, excluding safe JSON-LD usage
     const userControlled = dangerousHTML.filter(m => {
-      const ctx = [m.line, ...(m.context?.before || []), ...(m.context?.after || [])].join(' ');
+      const ctx = (m.line + (m.context?.before?.join(' ') || '') + (m.context?.after?.join(' ') || '')).replace(/\s+/g, ' ');
+      
+      // EXCEPTION: JSON-LD structured data is a standard, safe pattern for <script type="application/ld+json">
+      const isJsonLd = /ld\+json|JSON\.stringify/i.test(ctx);
+      if (isJsonLd) return false;
+
       return /props|params|query|body|input|data|content|message|html/i.test(ctx);
     });
 

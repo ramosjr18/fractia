@@ -175,6 +175,7 @@ export async function audit(depth) {
   // ── 3. Get git log with patches ───────────────────────────────────────────
   let logOutput = '';
   try {
+    // We scan --all to ensure total coverage across all branches and tags.
     logOutput = execSync(
       `git log -p --all --unified=0 --max-count=${MAX_COMMITS}`,
       { cwd: root, encoding: 'utf8', stdio: 'pipe', maxBuffer: MAX_BUF_MB * 1024 * 1024, timeout: 30_000 }
@@ -210,9 +211,27 @@ export async function audit(depth) {
   // ── 5. Check if still present at HEAD ────────────────────────────────────
   for (const hit of rawHits) {
     const stillPresent = existsAtHead(root, hit.file, hit.pattern.regex);
+    
+    // Check which branches/tags contain this commit
+    let refs = [];
+    try {
+      refs = execSync(`git branch -a --contains ${hit.commitFull}`, { cwd: root, encoding: 'utf8' })
+        .split('\n')
+        .map(b => b.trim().replace('* ', ''))
+        .filter(Boolean);
+      
+      const tags = execSync(`git tag --contains ${hit.commitFull}`, { cwd: root, encoding: 'utf8' })
+        .split('\n')
+        .map(t => `tag: ${t.trim()}`)
+        .filter(t => t !== 'tag: ');
+      
+      refs = [...refs, ...tags];
+    } catch {}
+
+    const refInfo = refs.length > 0 ? ` [Refs: ${refs.join(', ')}]` : ' [Objeto huérfano / reflog]';
     const status = stillPresent
       ? '⚠️  AÚN EXISTE en el código actual'
-      : '🗑️  Eliminado del código actual pero permanece en el historial';
+      : `🗑️  Eliminado del código actual pero permanece en el historial${refInfo}`;
 
     findings.push({
       type:        'vulnerability',

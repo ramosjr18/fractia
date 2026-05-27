@@ -369,8 +369,9 @@ async function auditNode(structure) {
   if (controllersDir) {
     const reqUserMatches = await grepFiles(controllersDir, [/req\.user\.\w+/], { extensions: ['.js'], contextLines: 3 });
     const unsafeReqUser = reqUserMatches.filter(m => {
-      const context = m.context.before.join('\n') + m.line;
-      return !/if\s*\(\s*!?\s*req\.user\b|req\.user\s*&&|req\.user\s*\?/.test(context);
+      const context = (m.context.before.join(' ') + m.line).replace(/\s+/g, ' ');
+      // Detect common guards: if check, optional chaining, or explicit helper
+      return !/if\s*\(\s*!?\s*req\.user\b|req\.user\s*&&|req\.user\s*\?|requireUser\s*\(|authenticate|isAuthenticated/i.test(context);
     });
     if (unsafeReqUser.length > 0) {
       const locs = unsafeReqUser.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
@@ -385,7 +386,7 @@ async function auditNode(structure) {
   }
 
   // --- Tokens in query params ---
-  const tokenQueryMatches = await grepFiles(src, [/token=|api_key=|apikey=/i], { extensions: ['.js'] });
+  const tokenQueryMatches = await grepFiles(src, [/token=|api_key=|apikey=|\?token=\$\{/i], { extensions: ['.js'] });
   if (tokenQueryMatches.length > 0) {
     const locs = tokenQueryMatches.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
     findings.push({

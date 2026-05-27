@@ -45,22 +45,29 @@ async function auditNode(structure) {
   }
 
   // --- 3. Output Sanitization & Dangerous Sinks (SQL/API) ---
-  const sinkMatches = await grepFiles(src, [
+  const sinkMatchesRaw = await grepFiles(src, [
     /dangerouslySetInnerHTML/i,
     /eval\s*\(/i,
-    /exec\s*\(/i,
+    /\bexec\s*\(/i,
     /innerHTML/i,
-    /UPDATE\s+.*SET\s+.*\{/i, // Dynamic SQL pattern from ExampleApp
-    /text\(f"UPDATE/i,      // SQLAlchemy dynamic text
-    /nanobana|image_client/i // External API sinks
-  ], { extensions: jsExtensions.concat(['.py']) });
+    /(?:UPDATE|SELECT|INSERT|DELETE).*(?:SET|WHERE|VALUES).*(?:\+|['"]\s*\+)/i, 
+    /text\(f"UPDATE/i,
+    /nanobana|image_client/i
+  ], { extensions: jsExtensions.concat(['.py']), contextLines: 2 });
+
+  // Filter out RegExp.exec() false positives
+  const sinkMatches = sinkMatchesRaw.filter(m => {
+    if (/\.exec\s*\(/.test(m.line) && /=.*\.exec\s*\(/.test(m.line)) return false; // regex.exec()
+    return true;
+  });
 
   if (sinkMatches.length > 0) {
+    const locs = sinkMatches.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
     findings.push({
       type: 'critical',
       title: 'LLM-influenced data reaches dangerous sink (SQL/External API)',
-      description: 'Se detectó que datos que podrían provenir de un LLM o de la configuración de un agente se usan en sinks peligrosos como queries SQL dinámicas o llamadas a APIs externas de generación de assets. Esto permite ataques de Indirect Prompt Injection con impacto en persistencia o costes.',
-      code_example: 'text(f"UPDATE projects SET {step.output_field} = :val") // Altamente peligroso',
+      description: `Se detectó el uso de sinks peligrosos (SQL dinámico o APIs externas) en: ${locs}. Si estos datos provienen de un LLM, permite ataques de Indirect Prompt Injection.`,
+      code_example: sinkMatches.slice(0, 2).map(m => `${path.basename(m.filePath)}:${m.lineNumber} → ${m.line.trim()}`).join('\n'),
       cve: null,
     });
   }

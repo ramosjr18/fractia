@@ -246,13 +246,20 @@ async function auditNode(structure) {
     });
   }
 
-  const cookieMatches = await grepFiles(src, [/res\.cookie\s*\(/, /Set-Cookie/i], { extensions: ['.js'], contextLines: 3 });
+  const cookieMatches = await grepFiles(src, [/res\.cookie\s*\(/, /Set-Cookie/i], { extensions: ['.js'], contextLines: 8 });
   for (const match of cookieMatches) {
-    const context = match.line + match.context.after.join('\n');
-    const missingHttpOnly = !/httpOnly\s*:\s*true/i.test(context);
-    const missingSecure = !/secure\s*:\s*true/i.test(context);
-    if (missingHttpOnly || missingSecure) {
-      const missing = [missingHttpOnly && 'httpOnly', missingSecure && 'secure'].filter(Boolean).join(', ');
+    const context = (match.line + match.context.after.join('\n')).replace(/\s+/g, ' ');
+    const hasHttpOnly = /httpOnly\s*:\s*true/i.test(context);
+    
+    // Check for hardcoded true OR conditional that evaluates to true in production
+    // e.g. secure: !IS_DEVELOPMENT, secure: process.env.NODE_ENV === 'production'
+    const hasSecure = /secure\s*:\s*true/i.test(context) || 
+                      /secure\s*:\s*!IS_DEVELOPMENT/i.test(context) ||
+                      /secure\s*:\s*IS_PRODUCTION/i.test(context) ||
+                      /secure\s*:\s*process\.env\.NODE_ENV\s*===\s*['"]production['"]/i.test(context);
+
+    if (!hasHttpOnly || !hasSecure) {
+      const missing = [!hasHttpOnly && 'httpOnly', !hasSecure && 'secure'].filter(Boolean).join(', ');
       findings.push({
         type: 'vulnerability',
         title: `Cookie set without ${missing} flag(s)`,
@@ -260,7 +267,19 @@ async function auditNode(structure) {
         code_example: `res.cookie('name', value, { httpOnly: true, secure: true, sameSite: 'strict' })`,
         cve: null,
       });
-      break;
+      break; 
+    }
+
+    // Hardening check: avoid "secure: IS_PRODUCTION" (drops if NODE_ENV is unset)
+    // Suggest "secure: process.env.NODE_ENV !== 'development'"
+    if (/secure\s*:\s*IS_PRODUCTION/i.test(context) || /secure\s*:\s*process\.env\.NODE_ENV\s*===\s*['"]production['"]/i.test(context)) {
+       findings.push({
+        type: 'info',
+        title: 'Hardening: Use defensive "secure" cookie flag',
+        description: `Found "secure" flag tied to an explicit production check. If NODE_ENV is accidentally omitted in production, the flag will silently drop.`,
+        code_example: `// More defensive: only disable in dev, default to true\nsecure: process.env.NODE_ENV !== 'development'`,
+        cve: null,
+      });
     }
   }
 

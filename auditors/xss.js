@@ -234,17 +234,25 @@ async function auditNode(structure) {
     });
   }
 
-  const domXssMatches = await grepFiles(src, [/innerHTML\s*=.*\+/, /document\.write\s*\(/, /eval\s*\(\s*.*req\.|eval\s*\(\s*.*data\./], { extensions: ['.js', '.html'] });
-  if (domXssMatches.length > 0) {
-    const locs = domXssMatches.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
+  const domXssMatches = await grepFiles(src, [/innerHTML\s*=.*\+/, /document\.write\s*\(/, /eval\s*\(\s*.*req\.|eval\s*\(\s*.*data\./, /dangerouslySetInnerHTML/], { extensions: ['.js', '.html'], contextLines: 4 });
+  const domXssFiltered = domXssMatches.filter(m => {
+    const ctx = (m.line + (m.context?.before?.join(' ') || '') + (m.context?.after?.join(' ') || '')).replace(/\s+/g, ' ');
+    // Ignore safe JSON-LD usage
+    if (/ld\+json|JSON\.stringify/i.test(ctx)) return false;
+    return true;
+  });
+
+  if (domXssFiltered.length > 0) {
+    const locs = domXssFiltered.slice(0, 3).map(m => `${path.basename(m.filePath)}:${m.lineNumber}`).join(', ');
     findings.push({
       type: 'vulnerability',
-      title: 'DOM-based XSS risk: innerHTML or document.write with dynamic data',
+      title: 'DOM-based XSS risk: innerHTML, document.write or dangerouslySetInnerHTML',
       description: `Found potentially dangerous DOM manipulation at: ${locs}.`,
-      code_example: domXssMatches[0]?.line.trim() || null,
+      code_example: domXssFiltered[0]?.line?.trim() || null,
       cve: 'CWE-79',
     });
   }
+
 
   const evalMatches = await grepFiles(src, [/\beval\s*\(/, /new\s+Function\s*\(/, /vm\.runInThisContext/], { extensions: ['.js'] });
   const evalFiltered = evalMatches.filter(m => {
