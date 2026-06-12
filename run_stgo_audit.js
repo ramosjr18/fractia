@@ -14,7 +14,11 @@ import { config } from './config.js';
 import { runCodeAudit, ALL_MODULES, calculateRiskScore, generateSummary } from './engines/codeAudit.js';
 import { runMobileAudit, MOBILE_MODULES, isMobileProject } from './engines/flutterRunner.js';
 
-const ExampleApp_ROOT = '/path/to/workspace/stgo';
+const ExampleApp_ROOT = process.env.PROJECT_ROOT || process.argv[2];
+if (!ExampleApp_ROOT) {
+  console.error('Usage: PROJECT_ROOT=/path/to/stgo node run_stgo_audit.js  (or pass the path as the first arg)');
+  process.exit(1);
+}
 const AUDIT_DIR = path.join(ExampleApp_ROOT, '.audit');
 if (!existsSync(AUDIT_DIR)) mkdirSync(AUDIT_DIR, { recursive: true });
 

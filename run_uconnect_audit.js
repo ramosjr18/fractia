@@ -12,7 +12,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ── Config override ──────────────────────────────────────────────────────────
 import { config } from './config.js';
 
-const EXAMPLEAPP_ROOT  = '/path/to/workspace/ExampleApp';
+const EXAMPLEAPP_ROOT  = process.env.PROJECT_ROOT || process.argv[2];
+if (!EXAMPLEAPP_ROOT) {
+  console.error('Usage: PROJECT_ROOT=/path/to/ExampleApp node run_exampleapp_audit.js  (or pass the path as the first arg)');
+  process.exit(1);
+}
 const API_TARGET     = path.join(EXAMPLEAPP_ROOT, 'backend-api');
 const FRONT_TARGET   = path.join(EXAMPLEAPP_ROOT, 'frontend-app');
 const REPORTS_DIR    = path.join(__dirname, 'reports');

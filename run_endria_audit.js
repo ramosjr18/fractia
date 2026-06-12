@@ -2,8 +2,12 @@ import { config } from './config.js';
 import { runCodeAudit, ALL_MODULES } from './engines/codeAudit.js';
 import { writeFileSync } from 'fs';
 
-// Establecemos la ruta del proyecto objetivo (ExampleApp)
-config.projectRoot = '/path/to/project';
+// Ruta del proyecto objetivo — vía env var o primer argumento de CLI
+config.projectRoot = process.env.PROJECT_ROOT || process.argv[2];
+if (!config.projectRoot) {
+  console.error('Uso: PROJECT_ROOT=/ruta/al/proyecto node run_exampleapp_audit.js  (o pasa la ruta como primer argumento)');
+  process.exit(1);
+}
 // Podemos establecer el proveedor de IA si se cuenta con clave (por ejemplo: 'none', 'claude', 'openai')
 config.aiProvider = process.env.ANTHROPIC_API_KEY ? 'claude' : (process.env.OPENAI_API_KEY ? 'openai' : 'none');
 
