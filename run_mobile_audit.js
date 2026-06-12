@@ -3,8 +3,8 @@
  *
  * Outputs three JSON files into <ExampleApp>/.audit/ :
  *   - fractia-code.json     (Code Engine, all modules, depth=standard)
- *   - fractia-flutter-user.json   (Flutter Engine, apps/stgo_user)
- *   - fractia-flutter-driver.json (Flutter Engine, apps/stgo_driver)
+ *   - fractia-flutter-user.json   (Flutter Engine, apps/exampleapp_user)
+ *   - fractia-flutter-driver.json (Flutter Engine, apps/exampleapp_driver)
  *
  * Plus a combined fractia-raw.json (everything in one envelope).
  */
@@ -16,7 +16,7 @@ import { runMobileAudit, MOBILE_MODULES, isMobileProject } from './engines/flutt
 
 const ExampleApp_ROOT = process.env.PROJECT_ROOT || process.argv[2];
 if (!ExampleApp_ROOT) {
-  console.error('Usage: PROJECT_ROOT=/path/to/stgo node run_stgo_audit.js  (or pass the path as the first arg)');
+  console.error('Usage: PROJECT_ROOT=/path/to/project node run_mobile_audit.js  (or pass the path as the first arg)');
   process.exit(1);
 }
 const AUDIT_DIR = path.join(ExampleApp_ROOT, '.audit');
@@ -69,8 +69,8 @@ async function main() {
   console.log(`Target: ${ExampleApp_ROOT}`);
 
   const codeResult = await runCode();
-  const userResult = await runFlutter('user',   path.join(ExampleApp_ROOT, 'apps/stgo_user'));
-  const drvResult  = await runFlutter('driver', path.join(ExampleApp_ROOT, 'apps/stgo_driver'));
+  const userResult = await runFlutter('user',   path.join(ExampleApp_ROOT, 'apps/exampleapp_user'));
+  const drvResult  = await runFlutter('driver', path.join(ExampleApp_ROOT, 'apps/exampleapp_driver'));
 
   // Write each engine's raw output to its own file.
   const codeReport = {
@@ -95,7 +95,7 @@ async function main() {
         meta: {
           engine: 'flutter',
           tool: 'Fractia v3.0.0',
-          projectRoot: path.join(ExampleApp_ROOT, 'apps/stgo_user'),
+          projectRoot: path.join(ExampleApp_ROOT, 'apps/exampleapp_user'),
           modules: MOBILE_MODULES,
           generatedAt: ts(),
         },
@@ -117,7 +117,7 @@ async function main() {
         meta: {
           engine: 'flutter',
           tool: 'Fractia v3.0.0',
-          projectRoot: path.join(ExampleApp_ROOT, 'apps/stgo_driver'),
+          projectRoot: path.join(ExampleApp_ROOT, 'apps/exampleapp_driver'),
           modules: MOBILE_MODULES,
           generatedAt: ts(),
         },
@@ -143,7 +143,7 @@ async function main() {
     },
     code: codeReport,
     flutter_user: userResult ? {
-      meta: { projectRoot: path.join(ExampleApp_ROOT, 'apps/stgo_user'), modules: MOBILE_MODULES },
+      meta: { projectRoot: path.join(ExampleApp_ROOT, 'apps/exampleapp_user'), modules: MOBILE_MODULES },
       summary: {
         riskScore: userResult.riskScore,
         worstSeverity: userResult.worstSeverity,
@@ -154,7 +154,7 @@ async function main() {
       modules: userResult.results,
     } : null,
     flutter_driver: drvResult ? {
-      meta: { projectRoot: path.join(ExampleApp_ROOT, 'apps/stgo_driver'), modules: MOBILE_MODULES },
+      meta: { projectRoot: path.join(ExampleApp_ROOT, 'apps/exampleapp_driver'), modules: MOBILE_MODULES },
       summary: {
         riskScore: drvResult.riskScore,
         worstSeverity: drvResult.worstSeverity,

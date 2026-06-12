@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ExampleApp Full Security Audit — runs SAST on both backend-api and frontend-app
- * Usage: node run_exampleapp_audit.js
+ * Usage: PROJECT_ROOT=/path/to/project node run_fullstack_audit.js
  */
 import path from 'path';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
@@ -14,7 +14,7 @@ import { config } from './config.js';
 
 const EXAMPLEAPP_ROOT  = process.env.PROJECT_ROOT || process.argv[2];
 if (!EXAMPLEAPP_ROOT) {
-  console.error('Usage: PROJECT_ROOT=/path/to/ExampleApp node run_exampleapp_audit.js  (or pass the path as the first arg)');
+  console.error('Usage: PROJECT_ROOT=/path/to/project node run_fullstack_audit.js  (or pass the path as the first arg)');
   process.exit(1);
 }
 const API_TARGET     = path.join(EXAMPLEAPP_ROOT, 'backend-api');
@@ -88,14 +88,14 @@ const report = {
     depth: DEPTH,
     aiProvider: config.aiProvider,
   },
-  backend-api: {
+  backendApi: {
     path: API_TARGET,
     riskScore: apiScan.riskScore,
     summary: apiScan.summary,
     meta: apiScan.meta,
     results: apiScan.results,
   },
-  frontend-app: {
+  frontendApp: {
     path: FRONT_TARGET,
     riskScore: frontScan.riskScore,
     summary: frontScan.summary,

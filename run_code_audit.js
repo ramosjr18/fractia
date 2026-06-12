@@ -5,7 +5,7 @@ import { writeFileSync } from 'fs';
 // Ruta del proyecto objetivo — vía env var o primer argumento de CLI
 config.projectRoot = process.env.PROJECT_ROOT || process.argv[2];
 if (!config.projectRoot) {
-  console.error('Uso: PROJECT_ROOT=/ruta/al/proyecto node run_exampleapp_audit.js  (o pasa la ruta como primer argumento)');
+  console.error('Uso: PROJECT_ROOT=/ruta/al/proyecto node run_code_audit.js  (o pasa la ruta como primer argumento)');
   process.exit(1);
 }
 // Podemos establecer el proveedor de IA si se cuenta con clave (por ejemplo: 'none', 'claude', 'openai')
